@@ -2,15 +2,16 @@
 
 from __future__ import annotations
 
-import os
 import asyncio
 import hashlib
 import ipaddress
 import json
 import logging
+import os
 import time
+from collections.abc import Callable
 from importlib import metadata as importlib_metadata
-from typing import Any, Callable
+from typing import Any
 
 import httpx
 from pydantic import BaseModel
@@ -41,6 +42,14 @@ from adstractai.models import AdRequest, AdResponse, Constraints, Conversation, 
 
 logger = logging.getLogger(__name__)
 
+MIN_API_KEY_LENGTH = 10
+MIN_USER_AGENT_LENGTH = 10
+RATE_LIMIT_STATUS = 429
+SERVER_ERROR_MIN = 500
+SERVER_ERROR_MAX = 599
+CLIENT_ERROR_MIN = 400
+CLIENT_ERROR_MAX = 499
+
 
 class AdClient:
     """Client for sending ad requests to the Adstract backend."""
@@ -58,7 +67,7 @@ class AdClient:
     ) -> None:
         if api_key is None:
             api_key = os.environ.get(ENV_API_KEY_NAME)
-        if not isinstance(api_key, str) or len(api_key.strip()) < 10:
+        if not isinstance(api_key, str) or len(api_key.strip()) < MIN_API_KEY_LENGTH:
             raise ValidationError("api_key must be at least 10 characters")
         self._api_key = api_key
         self._base_url = BASE_URL
@@ -155,7 +164,7 @@ class AdClient:
                 self._sleep_backoff(attempt)
                 continue
 
-            if response.status_code == 429:
+            if response.status_code == RATE_LIMIT_STATUS:
                 logger.debug("Rate limited on attempt %s", attempt + 1)
                 if attempt >= self._retries:
                     raise RateLimitError(
@@ -165,7 +174,7 @@ class AdClient:
                     )
                 self._sleep_backoff(attempt)
                 continue
-            if 500 <= response.status_code <= 599:
+            if SERVER_ERROR_MIN <= response.status_code <= SERVER_ERROR_MAX:
                 logger.debug("Server error on attempt %s", attempt + 1)
                 if attempt >= self._retries:
                     raise ServerError(
@@ -195,7 +204,7 @@ class AdClient:
                 await self._sleep_backoff_async(attempt)
                 continue
 
-            if response.status_code == 429:
+            if response.status_code == RATE_LIMIT_STATUS:
                 logger.debug("Async rate limited on attempt %s", attempt + 1)
                 if attempt >= self._retries:
                     raise RateLimitError(
@@ -205,7 +214,7 @@ class AdClient:
                     )
                 await self._sleep_backoff_async(attempt)
                 continue
-            if 500 <= response.status_code <= 599:
+            if SERVER_ERROR_MIN <= response.status_code <= SERVER_ERROR_MAX:
                 logger.debug("Async server error on attempt %s", attempt + 1)
                 if attempt >= self._retries:
                     raise ServerError(
@@ -228,7 +237,7 @@ class AdClient:
                 status_code=status,
                 response_snippet=_snippet(response),
             )
-        if 400 <= status <= 499:
+        if CLIENT_ERROR_MIN <= status <= CLIENT_ERROR_MAX:
             raise UnexpectedResponseError(
                 "Unexpected client error",
                 status_code=status,
@@ -277,7 +286,7 @@ class AdClient:
         accept_language: str | None,
         geo_provider: Callable[[str], dict[str, Any]] | None,
     ) -> dict[str, Any] | Metadata | None:
-        if len(user_agent) < 10:
+        if len(user_agent) < MIN_USER_AGENT_LENGTH:
             raise ValidationError("user_agent is invalid")
 
         metadata_dict = _normalize_metadata(metadata)
@@ -428,36 +437,40 @@ def _parse_device_type(user_agent: str) -> str:
 
 def _parse_os_family(user_agent: str) -> str | None:
     value = user_agent.lower()
-    if "windows" in value:
-        return "Windows"
-    if "android" in value:
-        return "Android"
-    if "iphone" in value or "ipad" in value or "ios" in value:
-        return "iOS"
-    if "mac os x" in value or "macintosh" in value:
-        return "macOS"
-    if "cros" in value:
-        return "ChromeOS"
-    if "linux" in value:
-        return "Linux"
+    candidates = (
+        ("windows", "Windows"),
+        ("android", "Android"),
+        ("iphone", "iOS"),
+        ("ipad", "iOS"),
+        ("ios", "iOS"),
+        ("mac os x", "macOS"),
+        ("macintosh", "macOS"),
+        ("cros", "ChromeOS"),
+        ("linux", "Linux"),
+    )
+    for token, label in candidates:
+        if token in value:
+            return label
     return None
 
 
 def _parse_browser_family(user_agent: str) -> str | None:
     value = user_agent.lower()
     if "edg" in value:
-        return "Edge"
-    if "opr" in value or "opera" in value:
-        return "Opera"
-    if "chrome" in value and "chromium" not in value and "edg" not in value:
-        return "Chrome"
-    if "safari" in value and "chrome" not in value and "chromium" not in value:
-        return "Safari"
-    if "firefox" in value:
-        return "Firefox"
-    if "chromium" in value:
-        return "Chromium"
-    return None
+        result = "Edge"
+    elif "opr" in value or "opera" in value:
+        result = "Opera"
+    elif "chrome" in value and "chromium" not in value and "edg" not in value:
+        result = "Chrome"
+    elif "safari" in value and "chrome" not in value and "chromium" not in value:
+        result = "Safari"
+    elif "firefox" in value:
+        result = "Firefox"
+    elif "chromium" in value:
+        result = "Chromium"
+    else:
+        result = None
+    return result
 
 
 def _sdk_version() -> str:

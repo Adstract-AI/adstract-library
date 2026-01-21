@@ -1,15 +1,34 @@
 import asyncio
 import json
+from typing import TypedDict
 
 import httpx
 import pytest
 
 from adstractai.client import AdClient
-from adstractai.constants import API_KEY_HEADER_NAME, SDK_HEADER_NAME, SDK_NAME, SDK_VERSION, SDK_VERSION_HEADER_NAME
+from adstractai.constants import (
+    API_KEY_HEADER_NAME,
+    SDK_HEADER_NAME,
+    SDK_NAME,
+    SDK_VERSION,
+    SDK_VERSION_HEADER_NAME,
+)
 from adstractai.errors import AuthenticationError, RateLimitError, ServerError, ValidationError
 
+DEFAULT_USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+)
+RETRY_SUCCESS_AFTER = 3
 
-def _valid_payload() -> dict[str, object]:
+
+class ValidPayload(TypedDict):
+    prompt: str
+    conversation: dict[str, str]
+    user_agent: str
+
+
+def _valid_payload(user_agent: str = DEFAULT_USER_AGENT) -> ValidPayload:
     return {
         "prompt": "Explain ad targeting",
         "conversation": {
@@ -17,6 +36,7 @@ def _valid_payload() -> dict[str, object]:
             "session_id": "sess-1",
             "message_id": "msg-1",
         },
+        "user_agent": user_agent,
     }
 
 
@@ -28,12 +48,16 @@ def test_validation_error_does_not_call_http() -> None:
         return httpx.Response(200, json={"ads": []})
 
     transport = httpx.MockTransport(handler)
-    client = AdClient(api_key="sk_test_1234567890", http_client=httpx.Client(transport=transport))
+    client = AdClient(
+        api_key="sk_test_1234567890",
+        http_client=httpx.Client(transport=transport),
+    )
 
     with pytest.raises(ValidationError):
         client.request_ad(
             prompt="hi",
             conversation={"conversation_id": "c", "session_id": "s", "message_id": "m"},
+            user_agent=DEFAULT_USER_AGENT,
         )
 
     assert calls["count"] == 0
@@ -47,7 +71,10 @@ def test_payload_defaults_applied() -> None:
         return httpx.Response(200, json={"ads": []})
 
     transport = httpx.MockTransport(handler)
-    client = AdClient(api_key="sk_test_1234567890", http_client=httpx.Client(transport=transport))
+    client = AdClient(
+        api_key="sk_test_1234567890",
+        http_client=httpx.Client(transport=transport),
+    )
 
     payload = _valid_payload()
     client.request_ad(**payload, constraints={})
@@ -65,11 +92,14 @@ def test_headers_include_sdk_and_api_key() -> None:
     captured = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
-        captured["headers"] = dict(request.headers)
+        captured["headers"] = request.headers
         return httpx.Response(200, json={"ads": []})
 
     transport = httpx.MockTransport(handler)
-    client = AdClient(api_key="sk_test_1234567890", http_client=httpx.Client(transport=transport))
+    client = AdClient(
+        api_key="sk_test_1234567890",
+        http_client=httpx.Client(transport=transport),
+    )
 
     payload = _valid_payload()
     client.request_ad(**payload)
@@ -88,21 +118,30 @@ def test_client_metadata_generated_from_user_agent() -> None:
         return httpx.Response(200, json={"ads": []})
 
     transport = httpx.MockTransport(handler)
-    client = AdClient(api_key="sk_test_1234567890", http_client=httpx.Client(transport=transport))
-
-    payload = _valid_payload()
-    client.request_ad(
-        **payload,
-        user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
-        "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        x_forwarded_for="8.8.8.8",
+    client = AdClient(
+        api_key="sk_test_1234567890",
+        http_client=httpx.Client(transport=transport),
     )
+
+    payload = _valid_payload(
+        user_agent=(
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        )
+    )
+    client.request_ad(**payload, x_forwarded_for="8.8.8.8")
 
     sent = captured["payload"]
     assert "metadata" in sent
     assert "client" in sent["metadata"]
     assert "user_agent_hash" in sent["metadata"]["client"]
-    assert sent["metadata"]["client"]["device_type"] in {"desktop", "mobile", "tablet", "bot", "unknown"}
+    assert sent["metadata"]["client"]["device_type"] in {
+        "desktop",
+        "mobile",
+        "tablet",
+        "bot",
+        "unknown",
+    }
     assert "geo" not in sent["metadata"]
 
 
@@ -114,13 +153,19 @@ def test_geo_not_generated_without_provider() -> None:
         return httpx.Response(200, json={"ads": []})
 
     transport = httpx.MockTransport(handler)
-    client = AdClient(api_key="sk_test_1234567890", http_client=httpx.Client(transport=transport))
+    client = AdClient(
+        api_key="sk_test_1234567890",
+        http_client=httpx.Client(transport=transport),
+    )
 
-    payload = _valid_payload()
+    payload = _valid_payload(
+        user_agent=(
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        )
+    )
     client.request_ad(
         **payload,
-        user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-        "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         accept_language="en-US,en;q=0.9",
         x_forwarded_for="8.8.4.4",
     )
@@ -144,13 +189,19 @@ def test_geo_generated_with_provider() -> None:
         return {"geo_country": "US", "geo_region": "CA"}
 
     transport = httpx.MockTransport(handler)
-    client = AdClient(api_key="sk_test_1234567890", http_client=httpx.Client(transport=transport))
+    client = AdClient(
+        api_key="sk_test_1234567890",
+        http_client=httpx.Client(transport=transport),
+    )
 
-    payload = _valid_payload()
+    payload = _valid_payload(
+        user_agent=(
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        )
+    )
     client.request_ad(
         **payload,
-        user_agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
-        "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         x_forwarded_for="10.0.0.1, 8.8.8.8",
         accept_language="en-US,en;q=0.9",
         geo_provider=geo_provider,
@@ -168,7 +219,10 @@ def test_authentication_error_mapping(status: int) -> None:
         return httpx.Response(status, json={"detail": "denied"})
 
     transport = httpx.MockTransport(handler)
-    client = AdClient(http_client=httpx.Client(transport=transport))
+    client = AdClient(
+        api_key="sk_test_1234567890",
+        http_client=httpx.Client(transport=transport),
+    )
 
     with pytest.raises(AuthenticationError):
         client.request_ad(**_valid_payload())
@@ -179,7 +233,11 @@ def test_rate_limit_mapping() -> None:
         return httpx.Response(429, json={"detail": "slow down"})
 
     transport = httpx.MockTransport(handler)
-    client = AdClient(api_key="sk_test_1234567890", http_client=httpx.Client(transport=transport), retries=0)
+    client = AdClient(
+        api_key="sk_test_1234567890",
+        http_client=httpx.Client(transport=transport),
+        retries=0,
+    )
 
     with pytest.raises(RateLimitError):
         client.request_ad(**_valid_payload())
@@ -190,7 +248,11 @@ def test_server_error_mapping() -> None:
         return httpx.Response(500, json={"detail": "error"})
 
     transport = httpx.MockTransport(handler)
-    client = AdClient(api_key="sk_test_1234567890", http_client=httpx.Client(transport=transport), retries=0)
+    client = AdClient(
+        api_key="sk_test_1234567890",
+        http_client=httpx.Client(transport=transport),
+        retries=0,
+    )
 
     with pytest.raises(ServerError):
         client.request_ad(**_valid_payload())
@@ -201,7 +263,7 @@ def test_retry_then_success() -> None:
 
     def handler(request: httpx.Request) -> httpx.Response:
         calls["count"] += 1
-        if calls["count"] < 3:
+        if calls["count"] < RETRY_SUCCESS_AFTER:
             return httpx.Response(500, json={"detail": "error"})
         return httpx.Response(200, json={"ads": [{"id": "ad-1"}]})
 
@@ -215,7 +277,7 @@ def test_retry_then_success() -> None:
 
     response = client.request_ad(**_valid_payload())
 
-    assert calls["count"] == 3
+    assert calls["count"] == RETRY_SUCCESS_AFTER
     assert response.ads is not None
 
 

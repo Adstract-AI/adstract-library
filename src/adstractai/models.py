@@ -5,8 +5,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError as PydanticValidationError
-from pydantic import field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import ValidationError as PydanticValidationError
 
 from adstractai.errors import ValidationError
 
@@ -92,7 +92,7 @@ class Metadata(BaseModel):
     client: ClientMetadata | None = None
 
     @model_validator(mode="after")
-    def _ensure_geo_or_client(self) -> "Metadata":
+    def _ensure_geo_or_client(self) -> Metadata:
         if self.geo is None and self.client is None:
             raise ValueError("metadata must include at least one of geo or client")
         return self
@@ -157,7 +157,7 @@ class AdRequest(BaseModel):
         conversation: Any,
         metadata: Any = None,
         constraints: Any = None,
-    ) -> "AdRequest":
+    ) -> AdRequest:
         try:
             return cls.model_validate(
                 {
@@ -181,7 +181,7 @@ class AdResponse(BaseModel):
     ads: list[dict[str, Any]] | None = None
 
     @classmethod
-    def from_json(cls, payload: Any) -> "AdResponse":
+    def from_json(cls, payload: Any) -> AdResponse:
         if not isinstance(payload, dict):
             raise ValidationError("response JSON must be an object")
         ads = payload.get("ads")
