@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "adstractai"
-version = "0.0.3"
+version = "0.0.4"
 description = "Ad network that delivers ads to the LLM's response"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -51,8 +51,8 @@ dev = [
 [tool.hatch.build.targets.wheel]
 packages = ["src/adstractai"]
 
-[tool.hatch.build]
-include = ["src/adstractai/py.typed"]
+[tool.hatch.build.targets.sdist]
+include = ["/src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
