@@ -1,9 +1,9 @@
-# adstractai
+# Adstract AI Python SDK
 
 ![CI](https://github.com/Adstract-AI/adstract-library/actions/workflows/ci.yml/badge.svg)
 ![PyPI](https://img.shields.io/pypi/v/adstractai.svg)
 
-Ad network that delivers ads to the LLM's response.
+Ad network SDK that delivers ads into LLM responses.
 
 ## Install
 
@@ -14,26 +14,101 @@ python -m pip install adstractai
 ## Quickstart
 
 ```python
-from adstractai import AdContext, inject_ad, select_ad
+from adstractai import AdClient
 
-context = AdContext(
+client = AdClient(api_key="sk_test_1234567890")
+
+response = client.request_ad(
     prompt="How do I improve analytics in my LLM app?",
-    response="Here are three ways to improve analytics...",
-    user_id="user-123",
+    conversation={
+        "conversation_id": "conv-1",
+        "session_id": "sess-1",
+        "message_id": "msg-1",
+    },
+    user_agent=(
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    ),
 )
 
-decision = select_ad(context)
-response_with_ad = inject_ad(context.response, decision)
-print(response_with_ad)
+print(response.ads)
+client.close()
 ```
 
-## API Example
+## Authentication
+
+Pass an API key when initializing the client or set `ADSTRACT_API_KEY`.
+
+```bash
+export ADSTRACT_API_KEY="sk_test_1234567890"
+```
 
 ```python
-from adstractai import AdContext, render_ad, select_ad
+from adstractai import AdClient
 
-decision = select_ad(AdContext(prompt="Need performance tips", response="Use caching"))
-print(render_ad(decision))
+client = AdClient()
+```
+
+## Advanced usage
+
+```python
+from adstractai import AdClient
+
+client = AdClient(api_key="sk_test_1234567890", retries=2)
+
+response = client.request_ad(
+    prompt="Need performance tips",
+    conversation={
+        "conversation_id": "conv-42",
+        "session_id": "sess-42",
+        "message_id": "msg-42",
+    },
+    user_agent=(
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    ),
+    metadata={
+        "client": {
+            "referrer": "https://example.com",
+        }
+    },
+    constraints={
+        "max_ads": 2,
+        "safe_mode": "standard",
+    },
+)
+
+print(response.raw)
+client.close()
+```
+
+## Async usage
+
+```python
+import asyncio
+
+from adstractai import AdClient
+
+
+async def main() -> None:
+    client = AdClient(api_key="sk_test_1234567890")
+    response = await client.request_ad_async(
+        prompt="Need performance tips",
+        conversation={
+            "conversation_id": "conv-99",
+            "session_id": "sess-99",
+            "message_id": "msg-99",
+        },
+        user_agent=(
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        ),
+    )
+    print(response.ads)
+    await client.aclose()
+
+
+asyncio.run(main())
 ```
 
 ## Development setup

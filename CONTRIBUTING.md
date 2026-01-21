@@ -23,7 +23,14 @@ Thanks for taking the time to contribute to Adstract AI.
    pytest
    ```
 
-4. Open a pull request with a clear description of the changes.
+4. If you add new behavior, update or add tests in `tests`.
+5. Open a pull request with a clear description of the changes.
+
+## Local tips
+
+- Use `ruff format --check .` in CI-like runs.
+- Ensure `ADSTRACT_API_KEY` is set for any manual API tests.
+- Keep examples in `README.md` aligned with the public API.
 
 ## Reporting issues
 

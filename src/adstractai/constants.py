@@ -1,6 +1,8 @@
 """Constants for the Adstract AI SDK."""
 
-BASE_URL = "http://localhost:8000"
+import os
+
+BASE_URL = os.getenv("ADSTRACT_DEBUG_URL", "https://api.adstract.ai")
 AD_INJECTION_ENDPOINT = "/api/ad-injection/start/"
 
 DEFAULT_TIMOUT_SECONDS = 10
