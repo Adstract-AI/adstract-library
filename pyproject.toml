@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "adstractai"
-version = "0.0.7"
+version = "0.0.8"
 description = "Ad network that delivers ads to the LLM's response"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -48,11 +48,27 @@ dev = [
   "ruff>=0.6.5",
 ]
 
+# -----------------------------
+# Hatch build configuration
+# -----------------------------
+
+# Wheel: include the package from src/
 [tool.hatch.build.targets.wheel]
 packages = ["src/adstractai"]
 
-[tool.hatch.build]
-include = ["src/adstractai/py.typed"]
+# Ensure py.typed is always shipped (typed package marker)
+[tool.hatch.build.targets.wheel.force-include]
+"src/adstractai/py.typed" = "adstractai/py.typed"
+
+# sdist: include full source + important top-level files
+[tool.hatch.build.targets.sdist]
+include = [
+  "src/adstractai/**",
+  "tests/**",
+  "README.md",
+  "LICENSE",
+  "CHANGELOG.md",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
