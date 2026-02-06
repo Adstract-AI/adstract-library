@@ -57,6 +57,7 @@ class Adstract:
         self,
         *,
         api_key: str | None = None,
+        base_url: str | None = None,
         timeout: float = DEFAULT_TIMEOUT_SECONDS,
         retries: int = DEFAULT_RETRIES,
         backoff_factor: float = 0.5,
@@ -69,7 +70,7 @@ class Adstract:
         if not isinstance(api_key, str) or len(api_key.strip()) < MIN_API_KEY_LENGTH:
             raise ValidationError("api_key must be at least 10 characters")
         self._api_key = api_key
-        self._base_url = BASE_URL
+        self._base_url = base_url or BASE_URL
         self._timeout = timeout
         self._retries = retries if retries <= MAX_RETRIES else DEFAULT_RETRIES
         self._backoff_factor = backoff_factor
