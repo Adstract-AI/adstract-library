@@ -27,8 +27,8 @@ from adstractai.constants import (
     SDK_VERSION_HEADER_NAME,
 )
 from adstractai.errors import (
-    AdSDKError,
     AdEnhancementError,
+    AdSDKError,
     AuthenticationError,
     NetworkError,
     RateLimitError,
@@ -53,15 +53,15 @@ class Adstract:
     """Client for sending ad requests to the Adstract backend."""
 
     def __init__(
-            self,
-            *,
-            api_key: str | None = None,
-            timeout: float = DEFAULT_TIMEOUT_SECONDS,
-            retries: int = DEFAULT_RETRIES,
-            backoff_factor: float = 0.5,
-            max_backoff: float = 8.0,
-            http_client: httpx.Client | None = None,
-            async_http_client: httpx.AsyncClient | None = None,
+        self,
+        *,
+        api_key: str | None = None,
+        timeout: float = DEFAULT_TIMEOUT_SECONDS,
+        retries: int = DEFAULT_RETRIES,
+        backoff_factor: float = 0.5,
+        max_backoff: float = 8.0,
+        http_client: httpx.Client | None = None,
+        async_http_client: httpx.AsyncClient | None = None,
     ) -> None:
         if api_key is None:
             api_key = os.environ.get(ENV_API_KEY_NAME)
@@ -87,13 +87,13 @@ class Adstract:
             await self._async_client.aclose()
 
     def request_ad_enhancement(
-            self,
-            *,
-            prompt: str,
-            conversation: dict[str, Any] | Conversation,
-            user_agent: str,
-            x_forwarded_for: str,
-            constraints: dict[str, Any] | Constraints | None = None,
+        self,
+        *,
+        prompt: str,
+        conversation: dict[str, Any] | Conversation,
+        user_agent: str,
+        x_forwarded_for: str,
+        constraints: dict[str, Any] | Constraints | None = None,
     ) -> str:
         metadata = self._build_metadata(
             user_agent=user_agent,
@@ -106,7 +106,9 @@ class Adstract:
             constraints=constraints,
         )
         payload = request_model.to_payload()
-        logger.debug("Sending ad enhancement request", extra={"prompt_length": len(request_model.prompt)})
+        logger.debug(
+            "Sending ad enhancement request", extra={"prompt_length": len(request_model.prompt)}
+        )
 
         response = self._send_request(payload)
 
@@ -115,7 +117,7 @@ class Adstract:
             raise AdEnhancementError(
                 "Ad enhancement failed",
                 status_code=None,
-                response_snippet=f"success: {response.success}"
+                response_snippet=f"success: {response.success}",
             )
 
         # Check if aepi data is available
@@ -123,19 +125,19 @@ class Adstract:
             raise AdEnhancementError(
                 "Ad enhancement response missing aepi data",
                 status_code=None,
-                response_snippet="aepi or aepi_text is None"
+                response_snippet="aepi or aepi_text is None",
             )
 
         return response.aepi.aepi_text
 
     def request_ad_enhancement_or_default(
-            self,
-            *,
-            prompt: str,
-            conversation: dict[str, Any] | Conversation,
-            user_agent: str,
-            x_forwarded_for: str,
-            constraints: dict[str, Any] | Constraints | None = None,
+        self,
+        *,
+        prompt: str,
+        conversation: dict[str, Any] | Conversation,
+        user_agent: str,
+        x_forwarded_for: str,
+        constraints: dict[str, Any] | Constraints | None = None,
     ) -> str:
         try:
             metadata = self._build_metadata(
@@ -149,30 +151,40 @@ class Adstract:
                 constraints=constraints,
             )
             payload = request_model.to_payload()
-            logger.debug("Sending ad enhancement request (with fallback)",
-                         extra={"prompt_length": len(request_model.prompt)})
+            logger.debug(
+                "Sending ad enhancement request (with fallback)",
+                extra={"prompt_length": len(request_model.prompt)},
+            )
 
             response = self._send_request(payload)
 
             # Check if enhancement was successful and has aepi data
-            if response.success and response.aepi is not None and response.aepi.aepi_text is not None:
+            if (
+                response.success
+                and response.aepi is not None
+                and response.aepi.aepi_text is not None
+            ):
                 return response.aepi.aepi_text
             else:
-                logger.debug("Enhancement not successful or missing aepi data, returning original prompt")
+                logger.debug(
+                    "Enhancement not successful or missing aepi data, returning original prompt"
+                )
                 return prompt
 
         except Exception as exc:
-            logger.debug("Enhancement failed with exception, returning original prompt", exc_info=exc)
+            logger.debug(
+                "Enhancement failed with exception, returning original prompt", exc_info=exc
+            )
             return prompt
 
     async def request_ad_enhancement_async(
-            self,
-            *,
-            prompt: str,
-            conversation: dict[str, Any] | Conversation,
-            user_agent: str,
-            x_forwarded_for: str,
-            constraints: dict[str, Any] | Constraints | None = None,
+        self,
+        *,
+        prompt: str,
+        conversation: dict[str, Any] | Conversation,
+        user_agent: str,
+        x_forwarded_for: str,
+        constraints: dict[str, Any] | Constraints | None = None,
     ) -> str:
         metadata = self._build_metadata(
             user_agent=user_agent,
@@ -185,7 +197,10 @@ class Adstract:
             constraints=constraints,
         )
         payload = request_model.to_payload()
-        logger.debug("Sending async ad enhancement request", extra={"prompt_length": len(request_model.prompt)})
+        logger.debug(
+            "Sending async ad enhancement request",
+            extra={"prompt_length": len(request_model.prompt)},
+        )
 
         response = await self._send_request_async(payload)
 
@@ -194,7 +209,7 @@ class Adstract:
             raise AdEnhancementError(
                 "Ad enhancement failed",
                 status_code=None,
-                response_snippet=f"success: {response.success}"
+                response_snippet=f"success: {response.success}",
             )
 
         # Check if aepi data is available
@@ -202,19 +217,19 @@ class Adstract:
             raise AdEnhancementError(
                 "Ad enhancement response missing aepi data",
                 status_code=None,
-                response_snippet="aepi or aepi_text is None"
+                response_snippet="aepi or aepi_text is None",
             )
 
         return response.aepi.aepi_text
 
     async def request_ad_enhancement_or_default_async(
-            self,
-            *,
-            prompt: str,
-            conversation: dict[str, Any] | Conversation,
-            user_agent: str,
-            x_forwarded_for: str,
-            constraints: dict[str, Any] | Constraints | None = None,
+        self,
+        *,
+        prompt: str,
+        conversation: dict[str, Any] | Conversation,
+        user_agent: str,
+        x_forwarded_for: str,
+        constraints: dict[str, Any] | Constraints | None = None,
     ) -> str:
         try:
             metadata = self._build_metadata(
@@ -228,20 +243,30 @@ class Adstract:
                 constraints=constraints,
             )
             payload = request_model.to_payload()
-            logger.debug("Sending async ad enhancement request (with fallback)",
-                         extra={"prompt_length": len(request_model.prompt)})
+            logger.debug(
+                "Sending async ad enhancement request (with fallback)",
+                extra={"prompt_length": len(request_model.prompt)},
+            )
 
             response = await self._send_request_async(payload)
 
             # Check if enhancement was successful and has aepi data
-            if response.success and response.aepi is not None and response.aepi.aepi_text is not None:
+            if (
+                response.success
+                and response.aepi is not None
+                and response.aepi.aepi_text is not None
+            ):
                 return response.aepi.aepi_text
             else:
-                logger.debug("Enhancement not successful or missing aepi data, returning original prompt")
+                logger.debug(
+                    "Enhancement not successful or missing aepi data, returning original prompt"
+                )
                 return prompt
 
         except Exception as exc:
-            logger.debug("Enhancement failed with exception, returning original prompt", exc_info=exc)
+            logger.debug(
+                "Enhancement failed with exception, returning original prompt", exc_info=exc
+            )
             return prompt
 
     def _endpoint(self) -> str:
@@ -361,11 +386,11 @@ class Adstract:
             ) from exc
 
     def _sleep_backoff(self, attempt: int) -> None:
-        delay = min(self._backoff_factor * (2 ** attempt), self._max_backoff)
+        delay = min(self._backoff_factor * (2**attempt), self._max_backoff)
         time.sleep(delay)
 
     async def _sleep_backoff_async(self, attempt: int) -> None:
-        delay = min(self._backoff_factor * (2 ** attempt), self._max_backoff)
+        delay = min(self._backoff_factor * (2**attempt), self._max_backoff)
         await asyncio.sleep(delay)
 
     def _build_headers(self) -> dict[str, str]:
@@ -376,10 +401,10 @@ class Adstract:
         }
 
     def _build_metadata(
-            self,
-            *,
-            user_agent: str,
-            x_forwarded_for: str,
+        self,
+        *,
+        user_agent: str,
+        x_forwarded_for: str,
     ) -> Metadata:
         if len(user_agent) < MIN_USER_AGENT_LENGTH:
             raise ValidationError("user_agent is invalid")

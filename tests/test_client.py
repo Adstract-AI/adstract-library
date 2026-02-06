@@ -45,12 +45,15 @@ def test_validation_error_does_not_call_http() -> None:
 
     def handler(request: httpx.Request) -> httpx.Response:
         calls["count"] += 1
-        return httpx.Response(200, json={
-            "ad_request_id": "test-1",
-            "ad_response_id": "test-1",
-            "success": True,
-            "execution_time_ms": 100.0
-        })
+        return httpx.Response(
+            200,
+            json={
+                "ad_request_id": "test-1",
+                "ad_response_id": "test-1",
+                "success": True,
+                "execution_time_ms": 100.0,
+            },
+        )
 
     transport = httpx.MockTransport(handler)
     client = Adstract(
@@ -73,12 +76,15 @@ def test_payload_defaults_applied() -> None:
 
     def handler(request: httpx.Request) -> httpx.Response:
         captured["payload"] = json.loads(request.content.decode("utf-8"))
-        return httpx.Response(200, json={
-            "ad_request_id": "test-2",
-            "ad_response_id": "test-2",
-            "success": True,
-            "execution_time_ms": 100.0
-        })
+        return httpx.Response(
+            200,
+            json={
+                "ad_request_id": "test-2",
+                "ad_response_id": "test-2",
+                "success": True,
+                "execution_time_ms": 100.0,
+            },
+        )
 
     transport = httpx.MockTransport(handler)
     client = Adstract(
@@ -100,12 +106,15 @@ def test_headers_include_sdk_and_api_key() -> None:
 
     def handler(request: httpx.Request) -> httpx.Response:
         captured["headers"] = request.headers
-        return httpx.Response(200, json={
-            "ad_request_id": "test-3",
-            "ad_response_id": "test-3",
-            "success": True,
-            "execution_time_ms": 100.0
-        })
+        return httpx.Response(
+            200,
+            json={
+                "ad_request_id": "test-3",
+                "ad_response_id": "test-3",
+                "success": True,
+                "execution_time_ms": 100.0,
+            },
+        )
 
     transport = httpx.MockTransport(handler)
     client = Adstract(
@@ -127,12 +136,15 @@ def test_client_metadata_generated_from_user_agent() -> None:
 
     def handler(request: httpx.Request) -> httpx.Response:
         captured["payload"] = json.loads(request.content.decode("utf-8"))
-        return httpx.Response(200, json={
-            "ad_request_id": "test-4",
-            "ad_response_id": "test-4",
-            "success": True,
-            "execution_time_ms": 100.0
-        })
+        return httpx.Response(
+            200,
+            json={
+                "ad_request_id": "test-4",
+                "ad_response_id": "test-4",
+                "success": True,
+                "execution_time_ms": 100.0,
+            },
+        )
 
     transport = httpx.MockTransport(handler)
     client = Adstract(
@@ -167,12 +179,15 @@ def test_geo_not_generated_without_provider() -> None:
 
     def handler(request: httpx.Request) -> httpx.Response:
         captured["payload"] = json.loads(request.content.decode("utf-8"))
-        return httpx.Response(200, json={
-            "ad_request_id": "test-5",
-            "ad_response_id": "test-5",
-            "success": True,
-            "execution_time_ms": 100.0
-        })
+        return httpx.Response(
+            200,
+            json={
+                "ad_request_id": "test-5",
+                "ad_response_id": "test-5",
+                "success": True,
+                "execution_time_ms": 100.0,
+            },
+        )
 
     transport = httpx.MockTransport(handler)
     client = Adstract(
@@ -204,12 +219,15 @@ def test_geo_generated_with_provider() -> None:
 
     def handler(request: httpx.Request) -> httpx.Response:
         captured["payload"] = json.loads(request.content.decode("utf-8"))
-        return httpx.Response(200, json={
-            "ad_request_id": "test-6",
-            "ad_response_id": "test-6",
-            "success": True,
-            "execution_time_ms": 100.0
-        })
+        return httpx.Response(
+            200,
+            json={
+                "ad_request_id": "test-6",
+                "ad_response_id": "test-6",
+                "success": True,
+                "execution_time_ms": 100.0,
+            },
+        )
 
     def geo_provider(ip: str) -> dict[str, object]:
         resolved["ip"] = ip
@@ -292,20 +310,23 @@ def test_retry_then_success() -> None:
         calls["count"] += 1
         if calls["count"] < RETRY_SUCCESS_AFTER:
             return httpx.Response(500, json={"detail": "error"})
-        return httpx.Response(200, json={
-            "ad_request_id": "test-req-id",
-            "ad_response_id": "test-resp-id",
-            "success": True,
-            "execution_time_ms": 100.5,
-            "aepi": {
-                "status": "ok",
-                "aepi_text": "Test ad content",
-                "checksum": "test-checksum",
-                "size_bytes": 100
+        return httpx.Response(
+            200,
+            json={
+                "ad_request_id": "test-req-id",
+                "ad_response_id": "test-resp-id",
+                "success": True,
+                "execution_time_ms": 100.5,
+                "aepi": {
+                    "status": "ok",
+                    "aepi_text": "Test ad content",
+                    "checksum": "test-checksum",
+                    "size_bytes": 100,
+                },
+                "tracking_url": "http://example.com/track",
+                "product_name": "Test Product",
             },
-            "tracking_url": "http://example.com/track",
-            "product_name": "Test Product"
-        })
+        )
 
     transport = httpx.MockTransport(handler)
     client = Adstract(
@@ -324,20 +345,23 @@ def test_retry_then_success() -> None:
 def test_async_request() -> None:
     async def run_test() -> None:
         def handler(request: httpx.Request) -> httpx.Response:
-            return httpx.Response(200, json={
-                "ad_request_id": "async-req-id",
-                "ad_response_id": "async-resp-id",
-                "success": True,
-                "execution_time_ms": 200.0,
-                "aepi": {
-                    "status": "ok",
-                    "aepi_text": "Async test ad content",
-                    "checksum": "async-test-checksum",
-                    "size_bytes": 150
+            return httpx.Response(
+                200,
+                json={
+                    "ad_request_id": "async-req-id",
+                    "ad_response_id": "async-resp-id",
+                    "success": True,
+                    "execution_time_ms": 200.0,
+                    "aepi": {
+                        "status": "ok",
+                        "aepi_text": "Async test ad content",
+                        "checksum": "async-test-checksum",
+                        "size_bytes": 150,
+                    },
+                    "tracking_url": "http://example.com/async-track",
+                    "product_name": "Async Test Product",
                 },
-                "tracking_url": "http://example.com/async-track",
-                "product_name": "Async Test Product"
-            })
+            )
 
         transport = httpx.MockTransport(handler)
         async_client = httpx.AsyncClient(transport=transport)
@@ -363,10 +387,10 @@ def test_new_response_format() -> None:
             "status": "ok",
             "aepi_text": "You are an AI assistant that integrates advertisements...",
             "checksum": "3683054a04bcb31e186e9439c6d2d0b0fd36b70c8d53c5ab3e847402418fb688",
-            "size_bytes": 1726
+            "size_bytes": 1726,
         },
         "tracking_url": "http://localhost:8000/c/2uuRF2WHizzzYedtMcShvv",
-        "product_name": "Adstract – LLM Advertising"
+        "product_name": "Adstract – LLM Advertising",
     }
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -386,8 +410,9 @@ def test_new_response_format() -> None:
     assert response.execution_time_ms == 1025.6521701812744
     assert response.aepi is not None
     assert response.aepi.status == "ok"
-    assert response.aepi.checksum == "3683054a04bcb31e186e9439c6d2d0b0fd36b70c8d53c5ab3e847402418fb688"
+    assert (
+        response.aepi.checksum == "3683054a04bcb31e186e9439c6d2d0b0fd36b70c8d53c5ab3e847402418fb688"
+    )
     assert response.aepi.size_bytes == 1726
     assert response.tracking_url == "http://localhost:8000/c/2uuRF2WHizzzYedtMcShvv"
     assert response.product_name == "Adstract – LLM Advertising"
-

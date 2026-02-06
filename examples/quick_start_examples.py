@@ -4,10 +4,12 @@ Quick Start Guide - Adstract AI Integration Examples
 Shows the most common ways developers integrate ad enhancement.
 """
 
-from adstractai import Adstract, AdEnhancementError
 import asyncio
 
+from adstractai import AdEnhancementError, Adstract
+
 API_KEY = "adpk_live_gx6xbutnrkyjaqjd.uatnQaAhIho-QalyI5Cng3CRhJKobYWoBGFqrvzgdPQ"
+
 
 def basic_integration():
     """Most basic integration - enhance a user prompt."""
@@ -20,7 +22,7 @@ def basic_integration():
     conversation = {
         "conversation_id": "chat_session_123",
         "session_id": "user_session_456",
-        "message_id": "message_789"
+        "message_id": "message_789",
     }
     user_agent = "Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X)"
     # Put this host ip as value, for testing
@@ -31,7 +33,7 @@ def basic_integration():
         prompt=user_prompt,
         conversation=conversation,
         user_agent=user_agent,
-        x_forwarded_for=x_forwarded_for
+        x_forwarded_for=x_forwarded_for,
     )
 
     # 4. Use enhanced prompt with your LLM
@@ -48,13 +50,15 @@ def chatbot_integration():
         def __init__(self):
             self.ad_client = Adstract(api_key="your_api_key")
 
-        def handle_user_message(self, user_id: str, message: str, user_agent: str, x_forwarded_for: str):
+        def handle_user_message(
+            self, user_id: str, message: str, user_agent: str, x_forwarded_for: str
+        ):
             """Process user message with ad enhancement."""
 
             conversation = {
                 "conversation_id": f"chat_{user_id}",
                 "session_id": f"session_{user_id}",
-                "message_id": f"msg_{hash(message) % 10000}"
+                "message_id": f"msg_{hash(message) % 10000}",
             }
 
             # Enhance the user's message
@@ -62,7 +66,7 @@ def chatbot_integration():
                 prompt=message,
                 conversation=conversation,
                 user_agent=user_agent,
-                x_forwarded_for=x_forwarded_for
+                x_forwarded_for=x_forwarded_for,
             )
 
             # Send enhanced prompt to your LLM (OpenAI, Claude, etc.)
@@ -84,7 +88,7 @@ def chatbot_integration():
         user_id="user123",
         message="What's the best laptop for programming?",
         user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
-        x_forwarded_for="185.100.245.160"
+        x_forwarded_for="185.100.245.160",
     )
     print(f"Bot response: {response}")
     bot.close()
@@ -103,10 +107,10 @@ async def high_volume_integration():
             conversation={
                 "conversation_id": f"conv_{user_data['user_id']}",
                 "session_id": f"session_{user_data['user_id']}",
-                "message_id": user_data["message_id"]
+                "message_id": user_data["message_id"],
             },
             user_agent=user_data["user_agent"],
-            x_forwarded_for=user_data["x_forwarded_for"]
+            x_forwarded_for=user_data["x_forwarded_for"],
         )
 
         # Process with your LLM
@@ -119,15 +123,15 @@ async def high_volume_integration():
             "message": "How to deploy Docker containers?",
             "message_id": "msg1",
             "user_agent": "Mozilla/5.0 (Macintosh)",
-            "x_forwarded_for": "185.100.245.160"
+            "x_forwarded_for": "185.100.245.160",
         },
         {
             "user_id": "user2",
             "message": "Best practices for React development?",
             "message_id": "msg2",
             "user_agent": "Mozilla/5.0 (Windows)",
-            "x_forwarded_for": "185.100.245.160"
-        }
+            "x_forwarded_for": "185.100.245.160",
+        },
     ]
 
     # Process all requests concurrently
@@ -146,7 +150,7 @@ def strict_vs_safe_enhancement():
     conversation = {
         "conversation_id": "demo_conv",
         "session_id": "demo_session",
-        "message_id": "demo_msg"
+        "message_id": "demo_msg",
     }
     user_agent = "Mozilla/5.0 (Demo)"
     prompt = "What's the weather today?"
@@ -158,7 +162,7 @@ def strict_vs_safe_enhancement():
             prompt=prompt,
             conversation=conversation,
             user_agent=user_agent,
-            x_forwarded_for=x_forwarded_for
+            x_forwarded_for=x_forwarded_for,
         )
         print("✅ Strict enhancement succeeded")
         # Use enhanced prompt...
@@ -172,7 +176,7 @@ def strict_vs_safe_enhancement():
         prompt=prompt,
         conversation=conversation,
         user_agent=user_agent,
-        x_forwarded_for=x_forwarded_for
+        x_forwarded_for=x_forwarded_for,
     )
     print("✅ Safe enhancement always works")
     # Always get a usable prompt (enhanced or original)...

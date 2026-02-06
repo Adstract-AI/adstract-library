@@ -48,4 +48,3 @@ class UnexpectedResponseError(AdSDKError):
 
 class AdEnhancementError(AdSDKError):
     """Raised when ad enhancement fails."""
-

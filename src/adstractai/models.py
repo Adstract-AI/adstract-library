@@ -21,7 +21,6 @@ class Conversation(BaseModel):
     message_id: str = Field(min_length=1)
 
 
-
 class ClientMetadata(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -42,7 +41,6 @@ class ClientMetadata(BaseModel):
         if not _SEMVER_RE.match(value):
             raise ValueError("sdk_version must be a semver string")
         return value
-
 
 
 class Constraints(BaseModel):
@@ -83,12 +81,12 @@ class AdRequest(BaseModel):
 
     @classmethod
     def from_values(
-            cls,
-            *,
-            prompt: Any,
-            conversation: Any,
-            metadata: Any = None,
-            constraints: Any = None,
+        cls,
+        *,
+        prompt: Any,
+        conversation: Any,
+        metadata: Any = None,
+        constraints: Any = None,
     ) -> AdRequest:
         try:
             return cls.model_validate(
@@ -144,15 +142,17 @@ class AdResponse(BaseModel):
                 raise ValidationError("Invalid aepi data structure") from exc
 
         try:
-            return cls.model_validate({
-                "raw": payload,
-                "ad_request_id": payload.get("ad_request_id"),
-                "ad_response_id": payload.get("ad_response_id"),
-                "success": payload.get("success"),
-                "execution_time_ms": payload.get("execution_time_ms"),
-                "aepi": aepi,
-                "tracking_url": payload.get("tracking_url"),
-                "product_name": payload.get("product_name"),
-            })
+            return cls.model_validate(
+                {
+                    "raw": payload,
+                    "ad_request_id": payload.get("ad_request_id"),
+                    "ad_response_id": payload.get("ad_response_id"),
+                    "success": payload.get("success"),
+                    "execution_time_ms": payload.get("execution_time_ms"),
+                    "aepi": aepi,
+                    "tracking_url": payload.get("tracking_url"),
+                    "product_name": payload.get("product_name"),
+                }
+            )
         except PydanticValidationError as exc:
             raise ValidationError("response JSON validation failed") from exc
