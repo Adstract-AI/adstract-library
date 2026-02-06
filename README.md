@@ -3,7 +3,7 @@
 ![CI](https://github.com/Adstract-AI/adstract-library/actions/workflows/ci.yml/badge.svg)
 ![PyPI](https://img.shields.io/pypi/v/adstractai.svg)
 
-Ad network SDK that delivers ads into LLM responses.
+Ad network SDK that enhances LLM prompts with integrated advertisements.
 
 ## Install
 
@@ -18,7 +18,7 @@ from adstractai import Adstract
 
 client = Adstract(api_key="sk_test_1234567890")
 
-response = client.request_ad(
+enhanced_prompt = client.request_ad_enhancement(
     prompt="How do I improve analytics in my LLM app?",
     conversation={
         "conversation_id": "conv-1",
@@ -29,9 +29,10 @@ response = client.request_ad(
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
         "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     ),
+    x_forwarded_for="192.168.1.1",
 )
 
-print(response.ads)
+print(enhanced_prompt)  # Enhanced prompt with integrated ads
 client.close()
 ```
 
@@ -49,6 +50,35 @@ from adstractai import Adstract
 client = Adstract()
 ```
 
+## Required Parameters
+
+All ad enhancement methods require both `user_agent` and `x_forwarded_for` parameters. Missing either parameter will raise a `MissingParameterError`:
+
+```python
+from adstractai import Adstract
+from adstractai.errors import MissingParameterError
+
+client = Adstract(api_key="sk_test_1234567890")
+
+try:
+    # This will raise MissingParameterError
+    client.request_ad_enhancement(
+        prompt="Test prompt",
+        conversation={"conversation_id": "c", "session_id": "s", "message_id": "m"},
+        user_agent="",  # Empty user_agent
+        x_forwarded_for="192.168.1.1",
+    )
+except MissingParameterError as e:
+    print(f"Error: {e}")
+```
+
+## Available Methods
+
+- `request_ad_enhancement()` - Returns enhanced prompt, raises exception on failure
+- `request_ad_enhancement_or_default()` - Returns enhanced prompt or original prompt on failure
+- `request_ad_enhancement_async()` - Async version that returns enhanced prompt
+- `request_ad_enhancement_or_default_async()` - Async version with fallback behavior
+
 ## Advanced usage
 
 ```python
@@ -56,7 +86,7 @@ from adstractai import Adstract
 
 client = Adstract(api_key="sk_test_1234567890", retries=2)
 
-response = client.request_ad(
+enhanced_prompt = client.request_ad_enhancement(
     prompt="Need performance tips",
     conversation={
         "conversation_id": "conv-42",
@@ -67,18 +97,29 @@ response = client.request_ad(
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
         "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     ),
-    metadata={
-        "client": {
-            "referrer": "https://example.com",
-        }
-    },
+    x_forwarded_for="203.0.113.1",
     constraints={
         "max_ads": 2,
         "safe_mode": "standard",
     },
 )
 
-print(response.raw)
+# For fallback behavior that returns original prompt on failure
+safe_prompt = client.request_ad_enhancement_or_default(
+    prompt="Need performance tips",
+    conversation={
+        "conversation_id": "conv-42",
+        "session_id": "sess-42", 
+        "message_id": "msg-42",
+    },
+    user_agent=(
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    ),
+    x_forwarded_for="203.0.113.1",
+)
+
+print(enhanced_prompt)
 client.close()
 ```
 
@@ -92,7 +133,8 @@ from adstractai import Adstract
 
 async def main() -> None:
     client = Adstract(api_key="sk_test_1234567890")
-    response = await client.request_ad_async(
+    
+    enhanced_prompt = await client.request_ad_enhancement_async(
         prompt="Need performance tips",
         conversation={
             "conversation_id": "conv-99",
@@ -103,8 +145,25 @@ async def main() -> None:
             "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
             "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         ),
+        x_forwarded_for="192.0.2.1",
     )
-    print(response.ads)
+    
+    # For fallback behavior in async
+    safe_prompt = await client.request_ad_enhancement_or_default_async(
+        prompt="Need performance tips",
+        conversation={
+            "conversation_id": "conv-99",
+            "session_id": "sess-99",
+            "message_id": "msg-99",
+        },
+        user_agent=(
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        ),
+        x_forwarded_for="192.0.2.1",
+    )
+    
+    print(enhanced_prompt)
     await client.aclose()
 
 
