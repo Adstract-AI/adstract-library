@@ -22,6 +22,10 @@ class ValidationError(AdSDKError):
     """Raised when request validation fails."""
 
 
+class MissingParameterError(AdSDKError):
+    """Raised when required parameters are missing."""
+
+
 class AuthenticationError(AdSDKError):
     """Raised on authentication/authorization failures."""
 

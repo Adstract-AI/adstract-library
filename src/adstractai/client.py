@@ -30,6 +30,7 @@ from adstractai.errors import (
     AdEnhancementError,
     AdSDKError,
     AuthenticationError,
+    MissingParameterError,
     NetworkError,
     RateLimitError,
     ServerError,
@@ -95,6 +96,11 @@ class Adstract:
         x_forwarded_for: str,
         constraints: dict[str, Any] | Constraints | None = None,
     ) -> str:
+        if not user_agent:
+            raise MissingParameterError("user_agent parameter is required")
+        if not x_forwarded_for:
+            raise MissingParameterError("x_forwarded_for parameter is required")
+
         metadata = self._build_metadata(
             user_agent=user_agent,
             x_forwarded_for=x_forwarded_for,
@@ -139,6 +145,11 @@ class Adstract:
         x_forwarded_for: str,
         constraints: dict[str, Any] | Constraints | None = None,
     ) -> str:
+        if not user_agent:
+            raise MissingParameterError("user_agent parameter is required")
+        if not x_forwarded_for:
+            raise MissingParameterError("x_forwarded_for parameter is required")
+
         try:
             metadata = self._build_metadata(
                 user_agent=user_agent,
@@ -186,6 +197,11 @@ class Adstract:
         x_forwarded_for: str,
         constraints: dict[str, Any] | Constraints | None = None,
     ) -> str:
+        if not user_agent:
+            raise MissingParameterError("user_agent parameter is required")
+        if not x_forwarded_for:
+            raise MissingParameterError("x_forwarded_for parameter is required")
+
         metadata = self._build_metadata(
             user_agent=user_agent,
             x_forwarded_for=x_forwarded_for,
@@ -231,6 +247,11 @@ class Adstract:
         x_forwarded_for: str,
         constraints: dict[str, Any] | Constraints | None = None,
     ) -> str:
+        if not user_agent:
+            raise MissingParameterError("user_agent parameter is required")
+        if not x_forwarded_for:
+            raise MissingParameterError("x_forwarded_for parameter is required")
+
         try:
             metadata = self._build_metadata(
                 user_agent=user_agent,

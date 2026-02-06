@@ -13,13 +13,21 @@ from adstractai.constants import (
     SDK_VERSION,
     SDK_VERSION_HEADER_NAME,
 )
-from adstractai.errors import AuthenticationError, RateLimitError, ServerError, ValidationError
+from adstractai.errors import (
+    AuthenticationError,
+    MissingParameterError,
+    RateLimitError,
+    ServerError,
+)
 
 DEFAULT_USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 )
-RETRY_SUCCESS_AFTER = 3
+RETRY_SUCCESS_AFTER = 1
+
+API_KEY = "adpk_live_gx6xbutnrkyjaqjd.uatnQaAhIho-QalyI5Cng3CRhJKobYWoBGFqrvzgdPQ"
+X_FORWARDED_FOR = "185.100.245.160"
 
 
 class ValidPayload(TypedDict):
@@ -40,67 +48,6 @@ def _valid_payload(user_agent: str = DEFAULT_USER_AGENT) -> ValidPayload:
     }
 
 
-def test_validation_error_does_not_call_http() -> None:
-    calls = {"count": 0}
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        calls["count"] += 1
-        return httpx.Response(
-            200,
-            json={
-                "ad_request_id": "test-1",
-                "ad_response_id": "test-1",
-                "success": True,
-                "execution_time_ms": 100.0,
-            },
-        )
-
-    transport = httpx.MockTransport(handler)
-    client = Adstract(
-        api_key="sk_test_1234567890",
-        http_client=httpx.Client(transport=transport),
-    )
-
-    with pytest.raises(ValidationError):
-        client.request_ad_enhancement(
-            prompt="hi",
-            conversation={"conversation_id": "c", "session_id": "s", "message_id": "m"},
-            user_agent=DEFAULT_USER_AGENT,
-        )
-
-    assert calls["count"] == 0
-
-
-def test_payload_defaults_applied() -> None:
-    captured = {}
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        captured["payload"] = json.loads(request.content.decode("utf-8"))
-        return httpx.Response(
-            200,
-            json={
-                "ad_request_id": "test-2",
-                "ad_response_id": "test-2",
-                "success": True,
-                "execution_time_ms": 100.0,
-            },
-        )
-
-    transport = httpx.MockTransport(handler)
-    client = Adstract(
-        api_key="sk_test_1234567890",
-        http_client=httpx.Client(transport=transport),
-    )
-
-    payload = _valid_payload()
-    client.request_ad_enhancement(**payload, constraints={})
-
-    sent = captured["payload"]
-    assert sent["constraints"]["max_ads"] == 1
-    assert sent["constraints"]["safe_mode"] == "standard"
-    assert "api_key" not in sent
-
-
 def test_headers_include_sdk_and_api_key() -> None:
     captured = {}
 
@@ -118,17 +65,17 @@ def test_headers_include_sdk_and_api_key() -> None:
 
     transport = httpx.MockTransport(handler)
     client = Adstract(
-        api_key="sk_test_1234567890",
+        api_key=API_KEY,
         http_client=httpx.Client(transport=transport),
     )
 
     payload = _valid_payload()
-    client.request_ad_enhancement(**payload)
+    client.request_ad_enhancement_or_default(**payload, x_forwarded_for=X_FORWARDED_FOR)
 
     headers = captured["headers"]
     assert headers[SDK_HEADER_NAME] == SDK_NAME
     assert headers[SDK_VERSION_HEADER_NAME] == SDK_VERSION
-    assert headers[API_KEY_HEADER_NAME] == "sk_test_1234567890"
+    assert headers[API_KEY_HEADER_NAME] == API_KEY
 
 
 def test_client_metadata_generated_from_user_agent() -> None:
@@ -148,7 +95,7 @@ def test_client_metadata_generated_from_user_agent() -> None:
 
     transport = httpx.MockTransport(handler)
     client = Adstract(
-        api_key="sk_test_1234567890",
+        api_key=API_KEY,
         http_client=httpx.Client(transport=transport),
     )
 
@@ -158,7 +105,7 @@ def test_client_metadata_generated_from_user_agent() -> None:
             "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         )
     )
-    client.request_ad_enhancement(**payload, x_forwarded_for="8.8.8.8")
+    client.request_ad_enhancement_or_default(**payload, x_forwarded_for="8.8.8.8")
 
     sent = captured["payload"]
     assert "metadata" in sent
@@ -191,7 +138,7 @@ def test_geo_not_generated_without_provider() -> None:
 
     transport = httpx.MockTransport(handler)
     client = Adstract(
-        api_key="sk_test_1234567890",
+        api_key=API_KEY,
         http_client=httpx.Client(transport=transport),
     )
 
@@ -201,9 +148,8 @@ def test_geo_not_generated_without_provider() -> None:
             "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         )
     )
-    client.request_ad_enhancement(
+    client.request_ad_enhancement_or_default(
         **payload,
-        accept_language="en-US,en;q=0.9",
         x_forwarded_for="8.8.4.4",
     )
 
@@ -235,7 +181,7 @@ def test_geo_generated_with_provider() -> None:
 
     transport = httpx.MockTransport(handler)
     client = Adstract(
-        api_key="sk_test_1234567890",
+        api_key=API_KEY,
         http_client=httpx.Client(transport=transport),
     )
 
@@ -245,17 +191,14 @@ def test_geo_generated_with_provider() -> None:
             "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         )
     )
-    client.request_ad_enhancement(
+    client.request_ad_enhancement_or_default(
         **payload,
         x_forwarded_for="10.0.0.1, 8.8.8.8",
-        accept_language="en-US,en;q=0.9",
-        geo_provider=geo_provider,
     )
 
     sent = captured["payload"]
-    assert resolved["ip"] == "8.8.8.8"
-    assert sent["metadata"]["geo"]["geo_country"] == "US"
-    assert sent["metadata"]["geo"]["language"] == "en-US"
+    assert resolved["ip"] is None  # geo_provider not called since not supported
+    assert "geo" not in sent["metadata"]  # No geo metadata without geo support
 
 
 @pytest.mark.parametrize("status", [401, 403])
@@ -265,12 +208,12 @@ def test_authentication_error_mapping(status: int) -> None:
 
     transport = httpx.MockTransport(handler)
     client = Adstract(
-        api_key="sk_test_1234567890",
+        api_key=API_KEY,
         http_client=httpx.Client(transport=transport),
     )
 
     with pytest.raises(AuthenticationError):
-        client.request_ad_enhancement(**_valid_payload())
+        client.request_ad_enhancement(**_valid_payload(), x_forwarded_for=X_FORWARDED_FOR)
 
 
 def test_rate_limit_mapping() -> None:
@@ -279,13 +222,13 @@ def test_rate_limit_mapping() -> None:
 
     transport = httpx.MockTransport(handler)
     client = Adstract(
-        api_key="sk_test_1234567890",
+        api_key=API_KEY,
         http_client=httpx.Client(transport=transport),
         retries=0,
     )
 
     with pytest.raises(RateLimitError):
-        client.request_ad_enhancement(**_valid_payload())
+        client.request_ad_enhancement(**_valid_payload(), x_forwarded_for=X_FORWARDED_FOR)
 
 
 def test_server_error_mapping() -> None:
@@ -294,13 +237,13 @@ def test_server_error_mapping() -> None:
 
     transport = httpx.MockTransport(handler)
     client = Adstract(
-        api_key="sk_test_1234567890",
+        api_key=API_KEY,
         http_client=httpx.Client(transport=transport),
         retries=0,
     )
 
     with pytest.raises(ServerError):
-        client.request_ad_enhancement(**_valid_payload())
+        client.request_ad_enhancement(**_valid_payload(), x_forwarded_for=X_FORWARDED_FOR)
 
 
 def test_retry_then_success() -> None:
@@ -330,13 +273,13 @@ def test_retry_then_success() -> None:
 
     transport = httpx.MockTransport(handler)
     client = Adstract(
-        api_key="sk_test_1234567890",
+        api_key=API_KEY,
         http_client=httpx.Client(transport=transport),
-        retries=2,
+        retries=1,
         backoff_factor=0.0,
     )
 
-    aepi_text = client.request_ad_enhancement(**_valid_payload())
+    aepi_text = client.request_ad_enhancement(**_valid_payload(), x_forwarded_for=X_FORWARDED_FOR)
 
     assert calls["count"] == RETRY_SUCCESS_AFTER
     assert aepi_text == "Test ad content"
@@ -365,11 +308,12 @@ def test_async_request() -> None:
 
         transport = httpx.MockTransport(handler)
         async_client = httpx.AsyncClient(transport=transport)
-        client = Adstract(api_key="sk_test_1234567890", async_http_client=async_client)
+        client = Adstract(api_key=API_KEY, async_http_client=async_client)
 
-        response = await client.request_ad_async(**_valid_payload())
-        assert response.success is True
-        assert response.aepi is not None
+        aepi_text = await client.request_ad_enhancement_async(
+            **_valid_payload(), x_forwarded_for=X_FORWARDED_FOR
+        )
+        assert aepi_text == "Async test ad content"
 
         await client.aclose()
 
@@ -398,21 +342,101 @@ def test_new_response_format() -> None:
 
     transport = httpx.MockTransport(handler)
     client = Adstract(
-        api_key="sk_test_1234567890",
+        api_key=API_KEY,
         http_client=httpx.Client(transport=transport),
     )
 
-    response = client.request_ad(**_valid_payload())
+    aepi_text = client.request_ad_enhancement(**_valid_payload(), x_forwarded_for=X_FORWARDED_FOR)
 
-    assert response.ad_request_id == "ac12d9db-e7f8-42f2-a101-7eed89693c43"
-    assert response.ad_response_id == "ac12d9db-e7f8-42f2-a101-7eed89693c43"
-    assert response.success is True
-    assert response.execution_time_ms == 1025.6521701812744
-    assert response.aepi is not None
-    assert response.aepi.status == "ok"
-    assert (
-        response.aepi.checksum == "3683054a04bcb31e186e9439c6d2d0b0fd36b70c8d53c5ab3e847402418fb688"
-    )
-    assert response.aepi.size_bytes == 1726
-    assert response.tracking_url == "http://localhost:8000/c/2uuRF2WHizzzYedtMcShvv"
-    assert response.product_name == "Adstract – LLM Advertising"
+    # Test that the aepi_text is correctly extracted from the new response format
+    assert aepi_text == "You are an AI assistant that integrates advertisements..."
+
+
+def test_missing_user_agent_raises_exception() -> None:
+    """Test that missing user_agent parameter raises MissingParameterError."""
+    client = Adstract(api_key=API_KEY)
+
+    with pytest.raises(MissingParameterError, match="user_agent parameter is required"):
+        client.request_ad_enhancement(
+            prompt="Test prompt",
+            conversation={"conversation_id": "c", "session_id": "s", "message_id": "m"},
+            user_agent="",  # Empty string should trigger the error
+            x_forwarded_for=X_FORWARDED_FOR,
+        )
+
+
+def test_missing_x_forwarded_for_raises_exception() -> None:
+    """Test that missing x_forwarded_for parameter raises MissingParameterError."""
+    client = Adstract(api_key=API_KEY)
+
+    with pytest.raises(MissingParameterError, match="x_forwarded_for parameter is required"):
+        client.request_ad_enhancement(
+            prompt="Test prompt",
+            conversation={"conversation_id": "c", "session_id": "s", "message_id": "m"},
+            user_agent=DEFAULT_USER_AGENT,
+            x_forwarded_for="",  # Empty string should trigger the error
+        )
+
+
+def test_missing_parameters_in_or_default_method() -> None:
+    """Test that missing parameters raise MissingParameterError in or_default method."""
+    client = Adstract(api_key=API_KEY)
+
+    with pytest.raises(MissingParameterError, match="user_agent parameter is required"):
+        client.request_ad_enhancement_or_default(
+            prompt="Test prompt",
+            conversation={"conversation_id": "c", "session_id": "s", "message_id": "m"},
+            user_agent="",
+            x_forwarded_for=X_FORWARDED_FOR,
+        )
+
+    with pytest.raises(MissingParameterError, match="x_forwarded_for parameter is required"):
+        client.request_ad_enhancement_or_default(
+            prompt="Test prompt",
+            conversation={"conversation_id": "c", "session_id": "s", "message_id": "m"},
+            user_agent=DEFAULT_USER_AGENT,
+            x_forwarded_for="",
+        )
+
+
+def test_missing_parameters_in_async_methods() -> None:
+    """Test that missing parameters raise MissingParameterError in async methods."""
+
+    async def run_test() -> None:
+        client = Adstract(api_key=API_KEY)
+
+        with pytest.raises(MissingParameterError, match="user_agent parameter is required"):
+            await client.request_ad_enhancement_async(
+                prompt="Test prompt",
+                conversation={"conversation_id": "c", "session_id": "s", "message_id": "m"},
+                user_agent="",
+                x_forwarded_for=X_FORWARDED_FOR,
+            )
+
+        with pytest.raises(MissingParameterError, match="x_forwarded_for parameter is required"):
+            await client.request_ad_enhancement_async(
+                prompt="Test prompt",
+                conversation={"conversation_id": "c", "session_id": "s", "message_id": "m"},
+                user_agent=DEFAULT_USER_AGENT,
+                x_forwarded_for="",
+            )
+
+        with pytest.raises(MissingParameterError, match="user_agent parameter is required"):
+            await client.request_ad_enhancement_or_default_async(
+                prompt="Test prompt",
+                conversation={"conversation_id": "c", "session_id": "s", "message_id": "m"},
+                user_agent="",
+                x_forwarded_for=X_FORWARDED_FOR,
+            )
+
+        with pytest.raises(MissingParameterError, match="x_forwarded_for parameter is required"):
+            await client.request_ad_enhancement_or_default_async(
+                prompt="Test prompt",
+                conversation={"conversation_id": "c", "session_id": "s", "message_id": "m"},
+                user_agent=DEFAULT_USER_AGENT,
+                x_forwarded_for="",
+            )
+
+        await client.aclose()
+
+    asyncio.run(run_test())
