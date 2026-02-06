@@ -44,3 +44,8 @@ class NetworkError(AdSDKError):
 
 class UnexpectedResponseError(AdSDKError):
     """Raised when the response payload is invalid or unexpected."""
+
+
+class AdEnhancementError(AdSDKError):
+    """Raised when ad enhancement fails."""
+

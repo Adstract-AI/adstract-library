@@ -31,6 +31,7 @@ from adstractai.constants import (
 )
 from adstractai.errors import (
     AdSDKError,
+    AdEnhancementError,
     AuthenticationError,
     NetworkError,
     RateLimitError,
@@ -51,7 +52,7 @@ CLIENT_ERROR_MIN = 400
 CLIENT_ERROR_MAX = 499
 
 
-class AdClient:
+class Adstract:
     """Client for sending ad requests to the Adstract backend."""
 
     def __init__(
@@ -88,7 +89,7 @@ class AdClient:
         if self._owns_async_client:
             await self._async_client.aclose()
 
-    def request_ad(
+    def request_ad_enhancement(
         self,
         *,
         prompt: str,
@@ -99,7 +100,7 @@ class AdClient:
         accept_language: str | None = None,
         geo_provider: Callable[[str], dict[str, Any]] | None = None,
         constraints: dict[str, Any] | Constraints | None = None,
-    ) -> AdResponse:
+    ) -> str:
         metadata = self._build_metadata(
             metadata=metadata,
             user_agent=user_agent,
@@ -114,10 +115,29 @@ class AdClient:
             constraints=constraints,
         )
         payload = request_model.to_payload()
-        logger.debug("Sending ad request", extra={"prompt_length": len(request_model.prompt)})
-        return self._send_request(payload)
+        logger.debug("Sending ad enhancement request", extra={"prompt_length": len(request_model.prompt)})
 
-    async def request_ad_async(
+        response = self._send_request(payload)
+
+        # Check if enhancement was successful
+        if not response.success:
+            raise AdEnhancementError(
+                "Ad enhancement failed",
+                status_code=None,
+                response_snippet=f"success: {response.success}"
+            )
+
+        # Check if aepi data is available
+        if response.aepi is None or response.aepi.aepi_text is None:
+            raise AdEnhancementError(
+                "Ad enhancement response missing aepi data",
+                status_code=None,
+                response_snippet="aepi or aepi_text is None"
+            )
+
+        return response.aepi.aepi_text
+
+    def request_ad_enhancement_or_default(
         self,
         *,
         prompt: str,
@@ -128,7 +148,49 @@ class AdClient:
         accept_language: str | None = None,
         geo_provider: Callable[[str], dict[str, Any]] | None = None,
         constraints: dict[str, Any] | Constraints | None = None,
-    ) -> AdResponse:
+    ) -> str:
+        try:
+            metadata = self._build_metadata(
+                metadata=metadata,
+                user_agent=user_agent,
+                x_forwarded_for=x_forwarded_for,
+                accept_language=accept_language,
+                geo_provider=geo_provider,
+            )
+            request_model = AdRequest.from_values(
+                prompt=prompt,
+                conversation=conversation,
+                metadata=metadata,
+                constraints=constraints,
+            )
+            payload = request_model.to_payload()
+            logger.debug("Sending ad enhancement request (with fallback)", extra={"prompt_length": len(request_model.prompt)})
+
+            response = self._send_request(payload)
+
+            # Check if enhancement was successful and has aepi data
+            if response.success and response.aepi is not None and response.aepi.aepi_text is not None:
+                return response.aepi.aepi_text
+            else:
+                logger.debug("Enhancement not successful or missing aepi data, returning original prompt")
+                return prompt
+
+        except Exception as exc:
+            logger.debug("Enhancement failed with exception, returning original prompt", exc_info=exc)
+            return prompt
+
+    async def request_ad_enhancement_async(
+        self,
+        *,
+        prompt: str,
+        conversation: dict[str, Any] | Conversation,
+        metadata: dict[str, Any] | Metadata | None = None,
+        user_agent: str,
+        x_forwarded_for: str | None = None,
+        accept_language: str | None = None,
+        geo_provider: Callable[[str], dict[str, Any]] | None = None,
+        constraints: dict[str, Any] | Constraints | None = None,
+    ) -> str:
         metadata = self._build_metadata(
             metadata=metadata,
             user_agent=user_agent,
@@ -143,8 +205,69 @@ class AdClient:
             constraints=constraints,
         )
         payload = request_model.to_payload()
-        logger.debug("Sending async ad request", extra={"prompt_length": len(request_model.prompt)})
-        return await self._send_request_async(payload)
+        logger.debug("Sending async ad enhancement request", extra={"prompt_length": len(request_model.prompt)})
+
+        response = await self._send_request_async(payload)
+
+        # Check if enhancement was successful
+        if not response.success:
+            raise AdEnhancementError(
+                "Ad enhancement failed",
+                status_code=None,
+                response_snippet=f"success: {response.success}"
+            )
+
+        # Check if aepi data is available
+        if response.aepi is None or response.aepi.aepi_text is None:
+            raise AdEnhancementError(
+                "Ad enhancement response missing aepi data",
+                status_code=None,
+                response_snippet="aepi or aepi_text is None"
+            )
+
+        return response.aepi.aepi_text
+
+    async def request_ad_enhancement_or_default_async(
+        self,
+        *,
+        prompt: str,
+        conversation: dict[str, Any] | Conversation,
+        metadata: dict[str, Any] | Metadata | None = None,
+        user_agent: str,
+        x_forwarded_for: str | None = None,
+        accept_language: str | None = None,
+        geo_provider: Callable[[str], dict[str, Any]] | None = None,
+        constraints: dict[str, Any] | Constraints | None = None,
+    ) -> str:
+        try:
+            metadata = self._build_metadata(
+                metadata=metadata,
+                user_agent=user_agent,
+                x_forwarded_for=x_forwarded_for,
+                accept_language=accept_language,
+                geo_provider=geo_provider,
+            )
+            request_model = AdRequest.from_values(
+                prompt=prompt,
+                conversation=conversation,
+                metadata=metadata,
+                constraints=constraints,
+            )
+            payload = request_model.to_payload()
+            logger.debug("Sending async ad enhancement request (with fallback)", extra={"prompt_length": len(request_model.prompt)})
+
+            response = await self._send_request_async(payload)
+
+            # Check if enhancement was successful and has aepi data
+            if response.success and response.aepi is not None and response.aepi.aepi_text is not None:
+                return response.aepi.aepi_text
+            else:
+                logger.debug("Enhancement not successful or missing aepi data, returning original prompt")
+                return prompt
+
+        except Exception as exc:
+            logger.debug("Enhancement failed with exception, returning original prompt", exc_info=exc)
+            return prompt
 
     def _endpoint(self) -> str:
         return f"{self._base_url}{AD_INJECTION_ENDPOINT}"

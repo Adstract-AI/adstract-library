@@ -1,8 +1,9 @@
 """Public package interface for adstractai."""
 
-from adstractai.client import AdClient
+from adstractai.client import Adstract
 from adstractai.errors import (
     AdSDKError,
+    AdEnhancementError,
     AuthenticationError,
     NetworkError,
     RateLimitError,
@@ -21,7 +22,7 @@ from adstractai.models import (
 )
 
 __all__ = [
-    "AdClient",
+    "Adstract",
     "AdRequest",
     "AdResponse",
     "ClientMetadata",
@@ -30,6 +31,7 @@ __all__ = [
     "GeoMetadata",
     "Metadata",
     "AdSDKError",
+    "AdEnhancementError",
     "AuthenticationError",
     "NetworkError",
     "RateLimitError",

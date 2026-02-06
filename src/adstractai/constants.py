@@ -2,7 +2,8 @@
 
 import os
 
-BASE_URL = os.getenv("ADSTRACT_DEBUG_URL", "https://api.adstract.ai")
+# BASE_URL = os.getenv("ADSTRACT_DEBUG_URL", "https://api.adstract.ai")
+BASE_URL = os.getenv("ADSTRACT_DEBUG_URL", "http://127.0.0.1:8000")
 AD_INJECTION_ENDPOINT = "/api/ad-injection/start/"
 
 DEFAULT_TIMOUT_SECONDS = 10

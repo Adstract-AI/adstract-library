@@ -98,40 +98,13 @@ class Metadata(BaseModel):
         return self
 
 
-class DocumentType(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    doc_type: str = Field(min_length=1)
-
-
-class GeoTag(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    geo_tag: str
-
-    @field_validator("geo_tag")
-    @classmethod
-    def _validate_geo_tag(cls, value: str) -> str:
-        value = value.upper()
-        if not _ISO2_RE.match(value):
-            raise ValueError("geo_tag must be ISO 2-letter code")
-        return value
-
-
 class Constraints(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     max_ads: int = Field(default=1, ge=1, le=20)
-    required_sponsored_label: bool = True
-    allow_click_tracking: bool = True
-    allow_impressions_tracking: bool = True
     min_similarity_hint: float | None = Field(default=None, ge=0.0, le=1.0)
     max_latency_ms_hint: int | None = Field(default=None, ge=0)
     safe_mode: str = "standard"
-    tag: str | None = None
-    blocked_document_types: list[DocumentType] | None = None
-    blocked_geo_tags: list[GeoTag] | None = None
-    ideal_geo_tags: list[GeoTag] | None = None
 
     @field_validator("safe_mode")
     @classmethod
@@ -151,12 +124,12 @@ class AdRequest(BaseModel):
 
     @classmethod
     def from_values(
-        cls,
-        *,
-        prompt: Any,
-        conversation: Any,
-        metadata: Any = None,
-        constraints: Any = None,
+            cls,
+            *,
+            prompt: Any,
+            conversation: Any,
+            metadata: Any = None,
+            constraints: Any = None,
     ) -> AdRequest:
         try:
             return cls.model_validate(
@@ -174,20 +147,53 @@ class AdRequest(BaseModel):
         return self.model_dump(exclude_none=True)
 
 
+class AepiData(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    status: str
+    aepi_text: str
+    checksum: str
+    size_bytes: int
+
+
 class AdResponse(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     raw: dict[str, Any]
-    ads: list[dict[str, Any]] | None = None
+    ad_request_id: str | None = None
+    ad_response_id: str | None = None
+    success: bool | None = None
+    execution_time_ms: float | None = None
+    aepi: AepiData | None = None
+    tracking_url: str | None = None
+    product_name: str | None = None
 
     @classmethod
     def from_json(cls, payload: Any) -> AdResponse:
         if not isinstance(payload, dict):
             raise ValidationError("response JSON must be an object")
-        ads = payload.get("ads")
-        if ads is not None and not isinstance(ads, list):
-            raise ValidationError("response ads must be a list")
+
+        # Parse aepi data if present
+        aepi = None
+        aepi_data = payload.get("aepi")
+        if aepi_data is not None:
+            if not isinstance(aepi_data, dict):
+                raise ValidationError("aepi must be an object")
+            try:
+                aepi = AepiData.model_validate(aepi_data)
+            except PydanticValidationError as exc:
+                raise ValidationError("Invalid aepi data structure") from exc
+
         try:
-            return cls.model_validate({"raw": payload, "ads": ads})
+            return cls.model_validate({
+                "raw": payload,
+                "ad_request_id": payload.get("ad_request_id"),
+                "ad_response_id": payload.get("ad_response_id"),
+                "success": payload.get("success"),
+                "execution_time_ms": payload.get("execution_time_ms"),
+                "aepi": aepi,
+                "tracking_url": payload.get("tracking_url"),
+                "product_name": payload.get("product_name"),
+            })
         except PydanticValidationError as exc:
             raise ValidationError("response JSON validation failed") from exc

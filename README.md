@@ -14,9 +14,9 @@ python -m pip install adstractai
 ## Quickstart
 
 ```python
-from adstractai import AdClient
+from adstractai import Adstract
 
-client = AdClient(api_key="sk_test_1234567890")
+client = Adstract(api_key="sk_test_1234567890")
 
 response = client.request_ad(
     prompt="How do I improve analytics in my LLM app?",
@@ -44,17 +44,17 @@ export ADSTRACT_API_KEY="sk_test_1234567890"
 ```
 
 ```python
-from adstractai import AdClient
+from adstractai import Adstract
 
-client = AdClient()
+client = Adstract()
 ```
 
 ## Advanced usage
 
 ```python
-from adstractai import AdClient
+from adstractai import Adstract
 
-client = AdClient(api_key="sk_test_1234567890", retries=2)
+client = Adstract(api_key="sk_test_1234567890", retries=2)
 
 response = client.request_ad(
     prompt="Need performance tips",
@@ -87,11 +87,11 @@ client.close()
 ```python
 import asyncio
 
-from adstractai import AdClient
+from adstractai import Adstract
 
 
 async def main() -> None:
-    client = AdClient(api_key="sk_test_1234567890")
+    client = Adstract(api_key="sk_test_1234567890")
     response = await client.request_ad_async(
         prompt="Need performance tips",
         conversation={
