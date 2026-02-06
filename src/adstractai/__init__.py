@@ -17,7 +17,6 @@ from adstractai.models import (
     ClientMetadata,
     Constraints,
     Conversation,
-    GeoMetadata,
     Metadata,
 )
 
@@ -28,7 +27,6 @@ __all__ = [
     "ClientMetadata",
     "Constraints",
     "Conversation",
-    "GeoMetadata",
     "Metadata",
     "AdSDKError",
     "AdEnhancementError",

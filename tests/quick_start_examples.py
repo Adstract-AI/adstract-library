@@ -23,12 +23,15 @@ def basic_integration():
         "message_id": "message_789"
     }
     user_agent = "Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X)"
+    # Put this host ip as value, for testing
+    x_forwarded_for = "185.100.245.160"
 
     # 3. Enhance prompt (safe method - never fails)
     enhanced_prompt = client.request_ad_enhancement_or_default(
         prompt=user_prompt,
         conversation=conversation,
-        user_agent=user_agent
+        user_agent=user_agent,
+        x_forwarded_for=x_forwarded_for
     )
 
     # 4. Use enhanced prompt with your LLM
@@ -45,7 +48,7 @@ def chatbot_integration():
         def __init__(self):
             self.ad_client = Adstract(api_key="your_api_key")
 
-        def handle_user_message(self, user_id: str, message: str, user_agent: str):
+        def handle_user_message(self, user_id: str, message: str, user_agent: str, x_forwarded_for: str):
             """Process user message with ad enhancement."""
 
             conversation = {
@@ -58,7 +61,8 @@ def chatbot_integration():
             enhanced_prompt = self.ad_client.request_ad_enhancement_or_default(
                 prompt=message,
                 conversation=conversation,
-                user_agent=user_agent
+                user_agent=user_agent,
+                x_forwarded_for=x_forwarded_for
             )
 
             # Send enhanced prompt to your LLM (OpenAI, Claude, etc.)
@@ -79,7 +83,8 @@ def chatbot_integration():
     response = bot.handle_user_message(
         user_id="user123",
         message="What's the best laptop for programming?",
-        user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+        user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+        x_forwarded_for="185.100.245.160"
     )
     print(f"Bot response: {response}")
     bot.close()
@@ -100,7 +105,8 @@ async def high_volume_integration():
                 "session_id": f"session_{user_data['user_id']}",
                 "message_id": user_data["message_id"]
             },
-            user_agent=user_data["user_agent"]
+            user_agent=user_data["user_agent"],
+            x_forwarded_for=user_data["x_forwarded_for"]
         )
 
         # Process with your LLM
@@ -112,13 +118,15 @@ async def high_volume_integration():
             "user_id": "user1",
             "message": "How to deploy Docker containers?",
             "message_id": "msg1",
-            "user_agent": "Mozilla/5.0 (Macintosh)"
+            "user_agent": "Mozilla/5.0 (Macintosh)",
+            "x_forwarded_for": "185.100.245.160"
         },
         {
             "user_id": "user2",
             "message": "Best practices for React development?",
             "message_id": "msg2",
-            "user_agent": "Mozilla/5.0 (Windows)"
+            "user_agent": "Mozilla/5.0 (Windows)",
+            "x_forwarded_for": "185.100.245.160"
         }
     ]
 
@@ -142,13 +150,15 @@ def strict_vs_safe_enhancement():
     }
     user_agent = "Mozilla/5.0 (Demo)"
     prompt = "What's the weather today?"
+    x_forwarded_for = "185.100.245.160"
 
     # Method 1: Strict enhancement (throws exceptions on failure)
     try:
         enhanced = client.request_ad_enhancement(
             prompt=prompt,
             conversation=conversation,
-            user_agent=user_agent
+            user_agent=user_agent,
+            x_forwarded_for=x_forwarded_for
         )
         print("✅ Strict enhancement succeeded")
         # Use enhanced prompt...
@@ -161,7 +171,8 @@ def strict_vs_safe_enhancement():
     enhanced = client.request_ad_enhancement_or_default(
         prompt=prompt,
         conversation=conversation,
-        user_agent=user_agent
+        user_agent=user_agent,
+        x_forwarded_for=x_forwarded_for
     )
     print("✅ Safe enhancement always works")
     # Always get a usable prompt (enhanced or original)...

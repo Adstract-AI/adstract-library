@@ -10,8 +10,6 @@ from pydantic import ValidationError as PydanticValidationError
 
 from adstractai.errors import ValidationError
 
-_ISO2_RE = re.compile(r"^[A-Z]{2}$")
-_LANGUAGE_RE = re.compile(r"^[A-Za-z]{2,8}(-[A-Za-z0-9]{2,8})*$")
 _SEMVER_RE = re.compile(r"^\d+\.\d+\.\d+$")
 
 
@@ -22,45 +20,6 @@ class Conversation(BaseModel):
     session_id: str = Field(min_length=1)
     message_id: str = Field(min_length=1)
 
-
-class GeoMetadata(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    geo_country: str | None = None
-    geo_region: str | None = None
-    city: str | None = None
-    asn: int | None = None
-    network_type: str | None = None
-    proxy_vpn_detection: bool | None = None
-    language: str | None = None
-
-    @field_validator("geo_country")
-    @classmethod
-    def _validate_geo_country(cls, value: str | None) -> str | None:
-        if value is None:
-            return None
-        value = value.upper()
-        if not _ISO2_RE.match(value):
-            raise ValueError("geo_country must be ISO 2-letter code")
-        return value
-
-    @field_validator("asn")
-    @classmethod
-    def _validate_asn(cls, value: int | None) -> int | None:
-        if value is None:
-            return None
-        if value <= 0:
-            raise ValueError("asn must be > 0")
-        return value
-
-    @field_validator("language")
-    @classmethod
-    def _validate_language(cls, value: str | None) -> str | None:
-        if value is None:
-            return None
-        if not _LANGUAGE_RE.match(value):
-            raise ValueError("language must be a valid language code")
-        return value
 
 
 class ClientMetadata(BaseModel):
@@ -85,18 +44,6 @@ class ClientMetadata(BaseModel):
         return value
 
 
-class Metadata(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    geo: GeoMetadata | None = None
-    client: ClientMetadata | None = None
-
-    @model_validator(mode="after")
-    def _ensure_geo_or_client(self) -> Metadata:
-        if self.geo is None and self.client is None:
-            raise ValueError("metadata must include at least one of geo or client")
-        return self
-
 
 class Constraints(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -112,6 +59,18 @@ class Constraints(BaseModel):
         if value not in {"strict", "standard", "off"}:
             raise ValueError("safe_mode must be 'strict', 'standard', or 'off'")
         return value
+
+
+class Metadata(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    client: ClientMetadata | None = None
+
+    @model_validator(mode="after")
+    def _ensure_client(self) -> Metadata:
+        if self.client is None:
+            raise ValueError("metadata must include client")
+        return self
 
 
 class AdRequest(BaseModel):
