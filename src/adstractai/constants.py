@@ -17,4 +17,4 @@ SDK_VERSION_HEADER_NAME = "X-Adstract-SDK-Version"
 API_KEY_HEADER_NAME = "X-Adstract-API-Key"
 
 SDK_NAME = "adstractai-python"
-SDK_VERSION = "0.1.1"
+SDK_VERSION = "0.0.7"
