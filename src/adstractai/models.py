@@ -78,6 +78,16 @@ class AdRequest(BaseModel):
     conversation: Conversation
     metadata: Metadata | None = None
     constraints: Constraints | None = None
+    wrapping_type: str | None = None
+
+    @field_validator("wrapping_type")
+    @classmethod
+    def _validate_wrapping_type(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        if value not in {"xml", "plain"}:
+            raise ValueError("wrapping_type must be 'xml' or 'plain'")
+        return value
 
     @classmethod
     def from_values(
@@ -87,6 +97,7 @@ class AdRequest(BaseModel):
         conversation: Any,
         metadata: Any = None,
         constraints: Any = None,
+        wrapping_type: Any = None,
     ) -> AdRequest:
         try:
             return cls.model_validate(
@@ -95,6 +106,7 @@ class AdRequest(BaseModel):
                     "conversation": conversation,
                     "metadata": metadata,
                     "constraints": constraints,
+                    "wrapping_type": wrapping_type,
                 }
             )
         except PydanticValidationError as exc:
@@ -123,6 +135,8 @@ class AdResponse(BaseModel):
     execution_time_ms: float | None = None
     aepi: AepiData | None = None
     tracking_url: str | None = None
+    tracking_identifier: str | None = None
+    sponsored_label: str | None = None
     product_name: str | None = None
 
     @classmethod
@@ -151,6 +165,8 @@ class AdResponse(BaseModel):
                     "execution_time_ms": payload.get("execution_time_ms"),
                     "aepi": aepi,
                     "tracking_url": payload.get("tracking_url"),
+                    "tracking_identifier": payload.get("tracking_identifier"),
+                    "sponsored_label": payload.get("sponsored_label"),
                     "product_name": payload.get("product_name"),
                 }
             )

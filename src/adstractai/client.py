@@ -9,7 +9,7 @@ import logging
 import os
 import time
 from importlib import metadata as importlib_metadata
-from typing import Any
+from typing import Any, Literal
 
 import httpx
 
@@ -96,6 +96,7 @@ class Adstract:
         user_agent: str,
         x_forwarded_for: str,
         constraints: dict[str, Any] | Constraints | None = None,
+        wrapping_type: Literal["xml", "plain"] | None = None,
     ) -> str:
         if not user_agent:
             raise MissingParameterError("user_agent parameter is required")
@@ -111,6 +112,7 @@ class Adstract:
             conversation=conversation,
             metadata=metadata,
             constraints=constraints,
+            wrapping_type=wrapping_type,
         )
         payload = request_model.to_payload()
         logger.debug(
@@ -145,6 +147,7 @@ class Adstract:
         user_agent: str,
         x_forwarded_for: str,
         constraints: dict[str, Any] | Constraints | None = None,
+        wrapping_type: Literal["xml", "plain"] | None = None,
     ) -> str:
         if not user_agent:
             raise MissingParameterError("user_agent parameter is required")
@@ -161,6 +164,7 @@ class Adstract:
                 conversation=conversation,
                 metadata=metadata,
                 constraints=constraints,
+                wrapping_type=wrapping_type,
             )
             payload = request_model.to_payload()
             logger.debug(
@@ -197,6 +201,7 @@ class Adstract:
         user_agent: str,
         x_forwarded_for: str,
         constraints: dict[str, Any] | Constraints | None = None,
+        wrapping_type: Literal["xml", "plain"] | None = None,
     ) -> str:
         if not user_agent:
             raise MissingParameterError("user_agent parameter is required")
@@ -212,6 +217,7 @@ class Adstract:
             conversation=conversation,
             metadata=metadata,
             constraints=constraints,
+            wrapping_type=wrapping_type,
         )
         payload = request_model.to_payload()
         logger.debug(
@@ -247,6 +253,7 @@ class Adstract:
         user_agent: str,
         x_forwarded_for: str,
         constraints: dict[str, Any] | Constraints | None = None,
+        wrapping_type: Literal["xml", "plain"] | None = None,
     ) -> str:
         if not user_agent:
             raise MissingParameterError("user_agent parameter is required")
@@ -263,6 +270,7 @@ class Adstract:
                 conversation=conversation,
                 metadata=metadata,
                 constraints=constraints,
+                wrapping_type=wrapping_type,
             )
             payload = request_model.to_payload()
             logger.debug(
