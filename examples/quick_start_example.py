@@ -1,54 +1,81 @@
 #!/usr/bin/env python3
-"""
-Quick Start Guide - Adstract AI Integration Examples
-Shows the most common ways developers integrate ad enhancement.
-"""
+"""Example demonstrating the updated analytics implementation with tracking_identifier counting."""
 
-from adstractai import Adstract
+from adstractai import Adstract, AdRequestConfiguration
+
 
 API_KEY = "adpk_live_gx6xbutnrkyjaqjd.uatnQaAhIho-QalyI5Cng3CRhJKobYWoBGFqrvzgdPQ"
 
 
-def basic_integration():
-    """Most basic integration - enhance a user prompt."""
+def main():
+    print("=== Quick Demo ===")
 
-    # 1. Initialize client
-    client = Adstract(api_key=API_KEY)
-
-    # 2. Prepare user data
-    user_prompt = "Where can i advertiser my products with AI?"
-    conversation = {
-        "conversation_id": "chat_session_123",
-        "session_id": "user_session_456",
-        "message_id": "message_789",
-    }
-    user_agent = "Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X)"
-    x_forwarded_for = "185.100.245.160"
-
-    # 3. Enhance prompt (safe method - never fails)
-    enhanced_prompt = client.request_ad_enhancement_or_default(
-        prompt=user_prompt,
-        conversation=conversation,
-        user_agent=user_agent,
-        x_forwarded_for=x_forwarded_for,
+    # Initialize the client with XML wrapping type
+    client = Adstract(
+        api_key=API_KEY,
+        base_url="http://localhost:8000"
     )
 
-    # 4. Use enhanced prompt with your LLM
-    print(f"Send this to OpenAI/Claude: {enhanced_prompt}")
+    config = AdRequestConfiguration(
+        session_id="user_session_123",
+        user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        x_forwarded_for="192.168.1.1"
+    )
 
-    # 5. Clean up
-    client.close()
+    prompt = "What are some good ways to advertise with AI ?"
+
+    try:
+        # Step 1: Get ad enhancement
+        result = client.request_ad_or_default(prompt=prompt, config=config)
+
+        if result.success:
+            print(f"✓ Ad enhancement successful")
+
+            # Step 2: Simulate LLM response with XML-wrapped ads
+            # This example shows how tracking_identifier affects total_ads_detected count
+            llm_response = f"""
+            Natively advertising with AI is all about integrating promotional content directly 
+            into user interactions in a way that feels organic and enhances the conversation. 
+            The best results come from leveraging AI’s contextual understanding to serve ads that 
+            are relevant to the user's interests or the current discussion—making them feel like helpful 
+            suggestions instead of interruptions.
+
+            To do this effectively, you should:
+            
+            Utilize AI’s natural language capabilities to blend messages smoothly into the chat flow.
+            Match ad content with the conversation context to ensure high relevance.
+            Maintain transparency with clear but unobtrusive sponsored labels.
+            Continuously optimize ad delivery based on user engagement and feedback.
+            <ADS>
+            Sponsored
+            Looking to maximize your AI platform’s revenue without disrupting user experience? Adstract 
+            offers a next-generation solution for monetizing conversations with context-aware, semantically
+            matched ads built for LLMs and chatbots. Publishers can deliver non-intrusive, valuable ads, 
+            benefiting from advanced relevance scoring, fraud prevention, and dynamic pricing. 
+            
+            <a href="{result.ad_response.tracking_url}">Request access</a>
+            
+            to Adstract today. Performance may vary based on traffic quality and integration.
+            By using AI’s contextual intelligence and platforms designed for conversational environments, 
+            you can achieve effective native advertising that benefits both users and publishers.
+            </ADS>
+            """
+
+            # Step 3: Analyze and report
+            client.analyse_and_report(
+                enhancement_result=result,
+                llm_response=llm_response
+            )
+
+            print(f"✓ Ad ack report successful")
+
+
+    except Exception as e:
+        print(f"Error: {e}")
+
+    finally:
+        client.close()
 
 
 if __name__ == "__main__":
-    print("Adstract AI Integration Examples\n")
-
-    print("1. Basic Integration:")
-    basic_integration()
-    print()
-
-    print("Integration examples completed!")
-    print("\nChoose your integration pattern:")
-    print("   • request_ad_enhancement_or_default() - Reliable, never fails")
-    print("   • request_ad_enhancement() - Strict, throws errors")
-    print("   • Use async versions for high-throughput applications")
+    main()
