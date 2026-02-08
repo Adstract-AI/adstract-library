@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from typing import Any
+from typing import Any, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from pydantic import ValidationError as PydanticValidationError
@@ -11,6 +11,17 @@ from pydantic import ValidationError as PydanticValidationError
 from adstractai.errors import ValidationError
 
 _SEMVER_RE = re.compile(r"^\d+\.\d+\.\d+$")
+
+
+class EnhancementResult(BaseModel):
+    """Result of an ad enhancement request."""
+    model_config = ConfigDict(extra="forbid")
+
+    prompt: str
+    session_id: str
+    ad_response: Optional["AdResponse"]
+    success: bool
+    error: Optional[Exception] = None
 
 
 class Conversation(BaseModel):
@@ -24,18 +35,18 @@ class Conversation(BaseModel):
 class ClientMetadata(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    ip_hash: str | None = None
-    os_family: str | None = None
-    device_type: str | None = None
-    referrer: str | None = None
-    x_forwarded_for: str | None = None
-    user_agent_hash: str | None = None
-    browser_family: str | None = None
-    sdk_version: str | None = None
+    ip_hash: Optional[str] = None
+    os_family: Optional[str] = None
+    device_type: Optional[str] = None
+    referrer: Optional[str] = None
+    x_forwarded_for: Optional[str] = None
+    user_agent_hash: Optional[str] = None
+    browser_family: Optional[str] = None
+    sdk_version: Optional[str] = None
 
     @field_validator("sdk_version")
     @classmethod
-    def _validate_sdk_version(cls, value: str | None) -> str | None:
+    def _validate_sdk_version(cls, value: Optional[str]) -> Optional[str]:
         if value is None:
             return None
         if not _SEMVER_RE.match(value):
@@ -43,26 +54,30 @@ class ClientMetadata(BaseModel):
         return value
 
 
-class Constraints(BaseModel):
+class AdRequestConfiguration(BaseModel):
+    """Configuration for ad enhancement requests."""
     model_config = ConfigDict(extra="forbid")
 
-    max_ads: int = Field(default=1, ge=1, le=20)
-    min_similarity_hint: float | None = Field(default=None, ge=0.0, le=1.0)
-    max_latency_ms_hint: int | None = Field(default=None, ge=0)
-    safe_mode: str = "standard"
+    session_id: Optional[str] = None
+    conversation: Optional[Conversation] = None
+    user_agent: str
+    x_forwarded_for: str
+    wrapping_type: Optional[str] = None
 
-    @field_validator("safe_mode")
+    @field_validator("wrapping_type")
     @classmethod
-    def _validate_safe_mode(cls, value: str) -> str:
-        if value not in {"strict", "standard", "off"}:
-            raise ValueError("safe_mode must be 'strict', 'standard', or 'off'")
+    def _validate_wrapping_type(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        if value not in {"xml", "plain"}:
+            raise ValueError("wrapping_type must be 'xml' or 'plain'")
         return value
 
 
 class Metadata(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    client: ClientMetadata | None = None
+    client: Optional[ClientMetadata] = None
 
     @model_validator(mode="after")
     def _ensure_client(self) -> Metadata:
@@ -76,13 +91,12 @@ class AdRequest(BaseModel):
 
     prompt: str = Field(min_length=3)
     conversation: Conversation
-    metadata: Metadata | None = None
-    constraints: Constraints | None = None
-    wrapping_type: str | None = None
+    metadata: Optional[Metadata] = None
+    wrapping_type: Optional[str] = None
 
     @field_validator("wrapping_type")
     @classmethod
-    def _validate_wrapping_type(cls, value: str | None) -> str | None:
+    def _validate_wrapping_type(cls, value: Optional[str]) -> Optional[str]:
         if value is None:
             return None
         if value not in {"xml", "plain"}:
@@ -96,7 +110,6 @@ class AdRequest(BaseModel):
         prompt: Any,
         conversation: Any,
         metadata: Any = None,
-        constraints: Any = None,
         wrapping_type: Any = None,
     ) -> AdRequest:
         try:
@@ -105,7 +118,6 @@ class AdRequest(BaseModel):
                     "prompt": prompt,
                     "conversation": conversation,
                     "metadata": metadata,
-                    "constraints": constraints,
                     "wrapping_type": wrapping_type,
                 }
             )
@@ -129,15 +141,15 @@ class AdResponse(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     raw: dict[str, Any]
-    ad_request_id: str | None = None
-    ad_response_id: str | None = None
-    success: bool | None = None
-    execution_time_ms: float | None = None
-    aepi: AepiData | None = None
-    tracking_url: str | None = None
-    tracking_identifier: str | None = None
-    sponsored_label: str | None = None
-    product_name: str | None = None
+    ad_request_id: Optional[str] = None
+    ad_response_id: Optional[str] = None
+    success: Optional[bool] = None
+    execution_time_ms: Optional[float] = None
+    aepi: Optional[AepiData] = None
+    tracking_url: Optional[str] = None
+    tracking_identifier: Optional[str] = None
+    sponsored_label: Optional[str] = None
+    product_name: Optional[str] = None
 
     @classmethod
     def from_json(cls, payload: Any) -> AdResponse:

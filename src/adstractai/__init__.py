@@ -13,20 +13,22 @@ from adstractai.errors import (
 )
 from adstractai.models import (
     AdRequest,
+    AdRequestConfiguration,
     AdResponse,
     ClientMetadata,
-    Constraints,
     Conversation,
+    EnhancementResult,
     Metadata,
 )
 
 __all__ = [
     "Adstract",
     "AdRequest",
+    "AdRequestConfiguration",
     "AdResponse",
     "ClientMetadata",
-    "Constraints",
     "Conversation",
+    "EnhancementResult",
     "Metadata",
     "AdSDKError",
     "AdEnhancementError",

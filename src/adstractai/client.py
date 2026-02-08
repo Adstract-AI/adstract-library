@@ -9,7 +9,7 @@ import logging
 import os
 import time
 from importlib import metadata as importlib_metadata
-from typing import Any, Literal
+from typing import Any, Optional
 
 import httpx
 
@@ -37,7 +37,7 @@ from adstractai.errors import (
     UnexpectedResponseError,
     ValidationError,
 )
-from adstractai.models import AdRequest, AdResponse, Constraints, Conversation, Metadata
+from adstractai.models import AdRequest, AdResponse, AdRequestConfiguration, Conversation, EnhancementResult, Metadata
 
 logger = logging.getLogger(__name__)
 
@@ -56,14 +56,14 @@ class Adstract:
     def __init__(
         self,
         *,
-        api_key: str | None = None,
-        base_url: str | None = None,
+        api_key: Optional[str] = None,
+        base_url: Optional[str] = None,
         timeout: float = DEFAULT_TIMEOUT_SECONDS,
         retries: int = DEFAULT_RETRIES,
         backoff_factor: float = 0.5,
         max_backoff: float = 8.0,
-        http_client: httpx.Client | None = None,
-        async_http_client: httpx.AsyncClient | None = None,
+        http_client: Optional[httpx.Client] = None,
+        async_http_client: Optional[httpx.AsyncClient] = None,
     ) -> None:
         if api_key is None:
             api_key = os.environ.get(ENV_API_KEY_NAME)
@@ -97,16 +97,16 @@ class Adstract:
 
     def _resolve_conversation(
         self,
-        session_id: str | None,
-        conversation: dict[str, Any] | Conversation | None
-    ) -> dict[str, Any] | Conversation:
+        session_id: Optional[str],
+        conversation: Optional[Conversation]
+    ) -> Conversation:
         """Resolve conversation object from session_id or conversation parameter."""
         if conversation is not None:
             # Use provided conversation, ignore session_id
             return conversation
         elif session_id is not None:
             # Create conversation from session_id
-            msg_timestamp = str(int(time.time() * 1000))
+            msg_timestamp = f"msg_u_{str(int(time.time() * 1000))}"
             return Conversation(
                 conversation_id=session_id,
                 session_id=session_id,
@@ -119,36 +119,54 @@ class Adstract:
         self,
         *,
         prompt: str,
-        session_id: str | None,
-        conversation: dict[str, Any] | Conversation | None,
-        user_agent: str,
-        x_forwarded_for: str,
-        constraints: dict[str, Any] | Constraints | None = None,
-        wrapping_type: Literal["xml", "plain"] | None = None,
+        config: AdRequestConfiguration,
     ) -> dict[str, Any]:
         """Build the complete ad request payload."""
-        self._validate_required_params(user_agent, x_forwarded_for)
-        conversation_obj = self._resolve_conversation(session_id, conversation)
+        self._validate_required_params(config.user_agent, config.x_forwarded_for)
+        conversation_obj = self._resolve_conversation(config.session_id, config.conversation)
 
         metadata = self._build_metadata(
-            user_agent=user_agent,
-            x_forwarded_for=x_forwarded_for,
+            user_agent=config.user_agent,
+            x_forwarded_for=config.x_forwarded_for,
         )
         request_model = AdRequest.from_values(
             prompt=prompt,
             conversation=conversation_obj,
             metadata=metadata,
-            constraints=constraints,
-            wrapping_type=wrapping_type,
+            wrapping_type=config.wrapping_type,
         )
         return request_model.to_payload()
 
-    def _validate_enhancement_response(self, response: AdResponse) -> str:
-        """Validate and extract aepi_text from enhancement response."""
-        # Check if enhancement was successful
+    def _build_ad_result(
+        self,
+        *,
+        prompt: str,
+        session_id: str,
+        ad_response: Optional[AdResponse],
+        success: bool,
+        error: Optional[Exception] = None,
+    ) -> EnhancementResult:
+        """Build an EnhancementResult object."""
+        return EnhancementResult(
+            prompt=prompt,
+            session_id=session_id,
+            ad_response=ad_response,
+            success=success,
+            error=error,
+        )
+
+    def _extract_session_id_from_conversation(
+        self, conversation: Conversation
+    ) -> str:
+        """Extract session_id from conversation object."""
+        return conversation.session_id
+
+    def _validate_ad_response(self, response: AdResponse) -> str:
+        """Validate and extract aepi_text from ad response."""
+        # Check if ad request was successful
         if not response.success:
             raise AdEnhancementError(
-                "Ad enhancement failed",
+                "Ad request failed",
                 status_code=None,
                 response_snippet=f"success: {response.success}",
             )
@@ -156,165 +174,213 @@ class Adstract:
         # Check if aepi data is available
         if response.aepi is None or response.aepi.aepi_text is None:
             raise AdEnhancementError(
-                "Ad enhancement response missing aepi data",
+                "Ad response missing aepi data",
                 status_code=None,
                 response_snippet="aepi or aepi_text is None",
             )
 
         return response.aepi.aepi_text
 
-    def request_ad_enhancement(
+    def request_ad(
         self,
         *,
         prompt: str,
-        session_id: str | None = None,
-        conversation: dict[str, Any] | Conversation | None = None,
-        user_agent: str,
-        x_forwarded_for: str,
-        constraints: dict[str, Any] | Constraints | None = None,
-        wrapping_type: Literal["xml", "plain"] | None = None,
-    ) -> str:
+        config: AdRequestConfiguration,
+    ) -> EnhancementResult:
         payload = self._build_ad_request(
             prompt=prompt,
-            session_id=session_id,
-            conversation=conversation,
-            user_agent=user_agent,
-            x_forwarded_for=x_forwarded_for,
-            constraints=constraints,
-            wrapping_type=wrapping_type,
+            config=config,
         )
 
+        # Determine the session_id to use in the result
+        if config.session_id is not None:
+            result_session_id = config.session_id
+        else:
+            conversation_obj = self._resolve_conversation(config.session_id, config.conversation)
+            result_session_id = self._extract_session_id_from_conversation(conversation_obj)
+
         logger.debug(
-            "Sending ad enhancement request", extra={"prompt_length": len(prompt)}
+            "Sending ad request", extra={"prompt_length": len(prompt)}
         )
 
         response = self._send_request(payload)
-        return self._validate_enhancement_response(response)
+        enhanced_prompt = self._validate_ad_response(response)
 
-    def request_ad_enhancement_or_default(
+        return self._build_ad_result(
+            prompt=enhanced_prompt,
+            session_id=result_session_id,
+            ad_response=response,
+            success=True,
+            error=None,
+        )
+
+    def request_ad_or_default(
         self,
         *,
         prompt: str,
-        session_id: str | None = None,
-        conversation: dict[str, Any] | Conversation | None = None,
-        user_agent: str,
-        x_forwarded_for: str,
-        constraints: dict[str, Any] | Constraints | None = None,
-        wrapping_type: Literal["xml", "plain"] | None = None,
-    ) -> str:
+        config: AdRequestConfiguration,
+    ) -> EnhancementResult:
+        # Determine the session_id to use in the result
+        if config.session_id is not None:
+            result_session_id = config.session_id
+        else:
+            conversation_obj = self._resolve_conversation(config.session_id, config.conversation)
+            result_session_id = self._extract_session_id_from_conversation(conversation_obj)
+
         try:
             payload = self._build_ad_request(
                 prompt=prompt,
-                session_id=session_id,
-                conversation=conversation,
-                user_agent=user_agent,
-                x_forwarded_for=x_forwarded_for,
-                constraints=constraints,
-                wrapping_type=wrapping_type,
+                config=config,
             )
 
             logger.debug(
-                "Sending ad enhancement request (with fallback)",
+                "Sending ad request (with fallback)",
                 extra={"prompt_length": len(prompt)},
             )
 
             response = self._send_request(payload)
 
-            # Check if enhancement was successful and has aepi data
+            # Check if ad request was successful and has aepi data
             if (
                 response.success
                 and response.aepi is not None
                 and response.aepi.aepi_text is not None
             ):
-                return response.aepi.aepi_text
+                return self._build_ad_result(
+                    prompt=response.aepi.aepi_text,
+                    session_id=result_session_id,
+                    ad_response=response,
+                    success=True,
+                    error=None,
+                )
             else:
                 logger.debug(
-                    "Enhancement not successful or missing aepi data, returning original prompt"
+                    "Ad request not successful or missing aepi data, returning original prompt"
                 )
-                return prompt
+                return self._build_ad_result(
+                    prompt=prompt,
+                    session_id=result_session_id,
+                    ad_response=response,
+                    success=False,
+                    error=None,
+                )
 
         except Exception as exc:
             logger.debug(
-                "Enhancement failed with exception, returning original prompt", exc_info=exc
+                "Ad request failed with exception, returning original prompt", exc_info=exc
             )
-            return prompt
+            # Create a mock AdResponse for the error case since we don't have a real response
+            from adstractai.models import AdResponse
+            mock_response = AdResponse(raw={})
 
-    async def request_ad_enhancement_async(
+            return self._build_ad_result(
+                prompt=prompt,
+                session_id=result_session_id,
+                ad_response=mock_response,
+                success=False,
+                error=exc,
+            )
+
+    async def request_ad_async(
         self,
         *,
         prompt: str,
-        session_id: str | None = None,
-        conversation: dict[str, Any] | Conversation | None = None,
-        user_agent: str,
-        x_forwarded_for: str,
-        constraints: dict[str, Any] | Constraints | None = None,
-        wrapping_type: Literal["xml", "plain"] | None = None,
-    ) -> str:
+        config: AdRequestConfiguration,
+    ) -> EnhancementResult:
         payload = self._build_ad_request(
             prompt=prompt,
-            session_id=session_id,
-            conversation=conversation,
-            user_agent=user_agent,
-            x_forwarded_for=x_forwarded_for,
-            constraints=constraints,
-            wrapping_type=wrapping_type,
+            config=config,
         )
 
+        # Determine the session_id to use in the result
+        if config.session_id is not None:
+            result_session_id = config.session_id
+        else:
+            conversation_obj = self._resolve_conversation(config.session_id, config.conversation)
+            result_session_id = self._extract_session_id_from_conversation(conversation_obj)
+
         logger.debug(
-            "Sending async ad enhancement request",
+            "Sending async ad request",
             extra={"prompt_length": len(prompt)},
         )
 
         response = await self._send_request_async(payload)
-        return self._validate_enhancement_response(response)
+        enhanced_prompt = self._validate_ad_response(response)
 
-    async def request_ad_enhancement_or_default_async(
+        return self._build_ad_result(
+            prompt=enhanced_prompt,
+            session_id=result_session_id,
+            ad_response=response,
+            success=True,
+            error=None,
+        )
+
+    async def request_ad_or_default_async(
         self,
         *,
         prompt: str,
-        session_id: str | None = None,
-        conversation: dict[str, Any] | Conversation | None = None,
-        user_agent: str,
-        x_forwarded_for: str,
-        constraints: dict[str, Any] | Constraints | None = None,
-        wrapping_type: Literal["xml", "plain"] | None = None,
-    ) -> str:
+        config: AdRequestConfiguration,
+    ) -> EnhancementResult:
+        # Determine the session_id to use in the result
+        if config.session_id is not None:
+            result_session_id = config.session_id
+        else:
+            conversation_obj = self._resolve_conversation(config.session_id, config.conversation)
+            result_session_id = self._extract_session_id_from_conversation(conversation_obj)
+
         try:
             payload = self._build_ad_request(
                 prompt=prompt,
-                session_id=session_id,
-                conversation=conversation,
-                user_agent=user_agent,
-                x_forwarded_for=x_forwarded_for,
-                constraints=constraints,
-                wrapping_type=wrapping_type,
+                config=config,
             )
 
             logger.debug(
-                "Sending async ad enhancement request (with fallback)",
+                "Sending async ad request (with fallback)",
                 extra={"prompt_length": len(prompt)},
             )
 
             response = await self._send_request_async(payload)
 
-            # Check if enhancement was successful and has aepi data
+            # Check if ad request was successful and has aepi data
             if (
                 response.success
                 and response.aepi is not None
                 and response.aepi.aepi_text is not None
             ):
-                return response.aepi.aepi_text
+                return self._build_ad_result(
+                    prompt=response.aepi.aepi_text,
+                    session_id=result_session_id,
+                    ad_response=response,
+                    success=True,
+                    error=None,
+                )
             else:
                 logger.debug(
-                    "Enhancement not successful or missing aepi data, returning original prompt"
+                    "Ad request not successful or missing aepi data, returning original prompt"
                 )
-                return prompt
+                return self._build_ad_result(
+                    prompt=prompt,
+                    session_id=result_session_id,
+                    ad_response=response,
+                    success=False,
+                    error=None,
+                )
 
         except Exception as exc:
             logger.debug(
-                "Enhancement failed with exception, returning original prompt", exc_info=exc
+                "Ad request failed with exception, returning original prompt", exc_info=exc
             )
-            return prompt
+            # Create a mock AdResponse for the error case since we don't have a real response
+            from adstractai.models import AdResponse
+            mock_response = AdResponse(raw={})
+
+            return self._build_ad_result(
+                prompt=prompt,
+                session_id=result_session_id,
+                ad_response=mock_response,
+                success=False,
+                error=exc,
+            )
 
     def _endpoint(self) -> str:
         return f"{self._base_url}{AD_INJECTION_ENDPOINT}"
@@ -465,7 +531,7 @@ class Adstract:
             raise ValidationError("Failed to build metadata") from exc
 
 
-def _snippet(response: httpx.Response, limit: int = 200) -> str | None:
+def _snippet(response: httpx.Response, limit: int = 200) -> Optional[str]:
     if response.text is None:
         return None
     return response.text[:limit]
@@ -503,7 +569,7 @@ def _parse_device_type(user_agent: str) -> str:
     return "unknown"
 
 
-def _parse_os_family(user_agent: str) -> str | None:
+def _parse_os_family(user_agent: str) -> Optional[str]:
     value = user_agent.lower()
     candidates = (
         ("windows", "Windows"),
@@ -522,7 +588,7 @@ def _parse_os_family(user_agent: str) -> str | None:
     return None
 
 
-def _parse_browser_family(user_agent: str) -> str | None:
+def _parse_browser_family(user_agent: str) -> Optional[str]:
     value = user_agent.lower()
     if "edg" in value:
         result = "Edge"
