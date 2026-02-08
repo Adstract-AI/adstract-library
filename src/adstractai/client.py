@@ -7,24 +7,33 @@ import hashlib
 import json
 import logging
 import os
+import re
 import time
 from importlib import metadata as importlib_metadata
-from typing import Any, Optional
+from typing import Any, Optional, Literal
 
 import httpx
 
 from adstractai.constants import (
+    AD_ACK_ENDPOINT,
     AD_INJECTION_ENDPOINT,
     API_KEY_HEADER_NAME,
     BASE_URL,
+    DEFAULT_ERROR_CODE,
+    DEFAULT_MAX_ADS,
+    DEFAULT_MAX_LATENCY,
+    DEFAULT_NOT_IMPLEMENTED_VALUE,
+    PLAIN_TAG,
     DEFAULT_RETRIES,
     DEFAULT_TIMEOUT_SECONDS,
+    XML_TAG,
     ENV_API_KEY_NAME,
     MAX_RETRIES,
+    OVERLOADED_VALUE,
     SDK_HEADER_NAME,
     SDK_NAME,
     SDK_VERSION,
-    SDK_VERSION_HEADER_NAME,
+    SDK_VERSION_HEADER_NAME, DEFAULT_TRUE_VALUE, SDK_TYPE,
 )
 from adstractai.errors import (
     AdEnhancementError,
@@ -37,7 +46,20 @@ from adstractai.errors import (
     UnexpectedResponseError,
     ValidationError,
 )
-from adstractai.models import AdRequest, AdResponse, AdRequestConfiguration, Conversation, EnhancementResult, Metadata
+from adstractai.models import (
+    AdAck,
+    AdRequest,
+    AdRequestConfiguration,
+    AdResponse,
+    Analytics,
+    Compliance,
+    Conversation,
+    Diagnostics,
+    EnhancementResult,
+    ErrorTracking,
+    ExternalMetadata,
+    Metadata,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -64,17 +86,24 @@ class Adstract:
         max_backoff: float = 8.0,
         http_client: Optional[httpx.Client] = None,
         async_http_client: Optional[httpx.AsyncClient] = None,
+        wrapping_type: Optional[Literal["xml", "plain"]] = None,
     ) -> None:
         if api_key is None:
             api_key = os.environ.get(ENV_API_KEY_NAME)
         if not isinstance(api_key, str) or len(api_key.strip()) < MIN_API_KEY_LENGTH:
             raise ValidationError("api_key must be at least 10 characters")
+
+        # Validate wrapping_type if provided
+        if wrapping_type is not None and wrapping_type not in {"xml", "plain"}:
+            raise ValidationError("wrapping_type must be 'xml' or 'plain'")
+
         self._api_key = api_key
         self._base_url = base_url or BASE_URL
         self._timeout = timeout
         self._retries = retries if retries <= MAX_RETRIES else DEFAULT_RETRIES
         self._backoff_factor = backoff_factor
         self._max_backoff = max_backoff
+        self._wrapping_type = wrapping_type or "xml"
         self._client = http_client or httpx.Client(timeout=timeout)
         self._async_client = async_http_client or httpx.AsyncClient(timeout=timeout)
         self._owns_client = http_client is None
@@ -133,15 +162,15 @@ class Adstract:
             prompt=prompt,
             conversation=conversation_obj,
             metadata=metadata,
-            wrapping_type=config.wrapping_type,
+            wrapping_type=self._wrapping_type,
         )
         return request_model.to_payload()
 
-    def _build_ad_result(
+    def _build_ad_enchancment_result(
         self,
         *,
         prompt: str,
-        session_id: str,
+        conversation: Conversation,
         ad_response: Optional[AdResponse],
         success: bool,
         error: Optional[Exception] = None,
@@ -149,7 +178,7 @@ class Adstract:
         """Build an EnhancementResult object."""
         return EnhancementResult(
             prompt=prompt,
-            session_id=session_id,
+            conversation=conversation,
             ad_response=ad_response,
             success=success,
             error=error,
@@ -192,12 +221,8 @@ class Adstract:
             config=config,
         )
 
-        # Determine the session_id to use in the result
-        if config.session_id is not None:
-            result_session_id = config.session_id
-        else:
-            conversation_obj = self._resolve_conversation(config.session_id, config.conversation)
-            result_session_id = self._extract_session_id_from_conversation(conversation_obj)
+        # Resolve the conversation to use in the result
+        conversation_obj = self._resolve_conversation(config.session_id, config.conversation)
 
         logger.debug(
             "Sending ad request", extra={"prompt_length": len(prompt)}
@@ -206,9 +231,9 @@ class Adstract:
         response = self._send_request(payload)
         enhanced_prompt = self._validate_ad_response(response)
 
-        return self._build_ad_result(
+        return self._build_ad_enchancment_result(
             prompt=enhanced_prompt,
-            session_id=result_session_id,
+            conversation=conversation_obj,
             ad_response=response,
             success=True,
             error=None,
@@ -220,12 +245,8 @@ class Adstract:
         prompt: str,
         config: AdRequestConfiguration,
     ) -> EnhancementResult:
-        # Determine the session_id to use in the result
-        if config.session_id is not None:
-            result_session_id = config.session_id
-        else:
-            conversation_obj = self._resolve_conversation(config.session_id, config.conversation)
-            result_session_id = self._extract_session_id_from_conversation(conversation_obj)
+        # Resolve the conversation to use in the result
+        conversation_obj = self._resolve_conversation(config.session_id, config.conversation)
 
         try:
             payload = self._build_ad_request(
@@ -243,12 +264,10 @@ class Adstract:
             # Check if ad request was successful and has aepi data
             if (
                 response.success
-                and response.aepi is not None
-                and response.aepi.aepi_text is not None
             ):
-                return self._build_ad_result(
+                return self._build_ad_enchancment_result(
                     prompt=response.aepi.aepi_text,
-                    session_id=result_session_id,
+                    conversation=conversation_obj,
                     ad_response=response,
                     success=True,
                     error=None,
@@ -257,9 +276,9 @@ class Adstract:
                 logger.debug(
                     "Ad request not successful or missing aepi data, returning original prompt"
                 )
-                return self._build_ad_result(
+                return self._build_ad_enchancment_result(
                     prompt=prompt,
-                    session_id=result_session_id,
+                    conversation=conversation_obj,
                     ad_response=response,
                     success=False,
                     error=None,
@@ -273,9 +292,9 @@ class Adstract:
             from adstractai.models import AdResponse
             mock_response = AdResponse(raw={})
 
-            return self._build_ad_result(
+            return self._build_ad_enchancment_result(
                 prompt=prompt,
-                session_id=result_session_id,
+                conversation=conversation_obj,
                 ad_response=mock_response,
                 success=False,
                 error=exc,
@@ -292,12 +311,8 @@ class Adstract:
             config=config,
         )
 
-        # Determine the session_id to use in the result
-        if config.session_id is not None:
-            result_session_id = config.session_id
-        else:
-            conversation_obj = self._resolve_conversation(config.session_id, config.conversation)
-            result_session_id = self._extract_session_id_from_conversation(conversation_obj)
+        # Resolve the conversation to use in the result
+        conversation_obj = self._resolve_conversation(config.session_id, config.conversation)
 
         logger.debug(
             "Sending async ad request",
@@ -307,9 +322,9 @@ class Adstract:
         response = await self._send_request_async(payload)
         enhanced_prompt = self._validate_ad_response(response)
 
-        return self._build_ad_result(
+        return self._build_ad_enchancment_result(
             prompt=enhanced_prompt,
-            session_id=result_session_id,
+            conversation=conversation_obj,
             ad_response=response,
             success=True,
             error=None,
@@ -321,12 +336,8 @@ class Adstract:
         prompt: str,
         config: AdRequestConfiguration,
     ) -> EnhancementResult:
-        # Determine the session_id to use in the result
-        if config.session_id is not None:
-            result_session_id = config.session_id
-        else:
-            conversation_obj = self._resolve_conversation(config.session_id, config.conversation)
-            result_session_id = self._extract_session_id_from_conversation(conversation_obj)
+        # Resolve the conversation to use in the result
+        conversation_obj = self._resolve_conversation(config.session_id, config.conversation)
 
         try:
             payload = self._build_ad_request(
@@ -344,12 +355,10 @@ class Adstract:
             # Check if ad request was successful and has aepi data
             if (
                 response.success
-                and response.aepi is not None
-                and response.aepi.aepi_text is not None
             ):
-                return self._build_ad_result(
+                return self._build_ad_enchancment_result(
                     prompt=response.aepi.aepi_text,
-                    session_id=result_session_id,
+                    conversation=conversation_obj,
                     ad_response=response,
                     success=True,
                     error=None,
@@ -358,9 +367,9 @@ class Adstract:
                 logger.debug(
                     "Ad request not successful or missing aepi data, returning original prompt"
                 )
-                return self._build_ad_result(
+                return self._build_ad_enchancment_result(
                     prompt=prompt,
-                    session_id=result_session_id,
+                    conversation=conversation_obj,
                     ad_response=response,
                     success=False,
                     error=None,
@@ -374,9 +383,9 @@ class Adstract:
             from adstractai.models import AdResponse
             mock_response = AdResponse(raw={})
 
-            return self._build_ad_result(
+            return self._build_ad_enchancment_result(
                 prompt=prompt,
-                session_id=result_session_id,
+                conversation=conversation_obj,
                 ad_response=mock_response,
                 success=False,
                 error=exc,
@@ -529,6 +538,349 @@ class Adstract:
             return Metadata.model_validate(metadata_dict)
         except Exception as exc:
             raise ValidationError("Failed to build metadata") from exc
+
+    def _build_analytics(
+        self,
+        enhancement_result: EnhancementResult,
+        llm_response: str
+    ) -> Analytics:
+        """Build analytics data from enhancement result and LLM response."""
+
+        # Determine wrapping tags based on wrapping_type
+        if self._wrapping_type == "xml":
+            tag_name = XML_TAG
+        else:  # plain or None
+            tag_name = PLAIN_TAG
+
+        # Extract ad content blocks differently based on wrapping type
+        ad_content_blocks = []
+
+        if self._wrapping_type == "xml":
+            # For XML: get content between <ADS> and </ADS>
+            pattern = rf'<{re.escape(tag_name)}>(.*?)</{re.escape(tag_name)}>'
+            ad_content_blocks = re.findall(pattern, llm_response, re.DOTALL | re.IGNORECASE)
+        else:
+            # For plain: get content between sponsored_label and DEFAULT_PLAIN_TAG
+            sponsored_label = enhancement_result.ad_response.sponsored_label
+            # Pattern: from sponsored_label to DEFAULT_PLAIN_TAG
+            pattern = rf'{re.escape(sponsored_label)}(.*?){re.escape(tag_name)}'
+            ad_content_blocks = re.findall(pattern, llm_response, re.DOTALL | re.IGNORECASE)
+
+
+        # Calculate total_ads_detected by counting tracking_identifier occurrences in ad blocks
+        total_ads_detected = 0
+        tracking_identifier = enhancement_result.ad_response.tracking_identifier
+        # Count tracking_identifier occurrences in all ad content blocks
+        for ad_block in ad_content_blocks:
+            total_ads_detected += ad_block.count(tracking_identifier)
+
+        # Links analysis (not implemented yet)
+        valid_links = DEFAULT_NOT_IMPLEMENTED_VALUE
+        invalid_links = DEFAULT_NOT_IMPLEMENTED_VALUE
+
+        # Total links from tracking_url in AdResponse
+        total_links = llm_response.count(enhancement_result.ad_response.tracking_url)
+
+        # Word count analysis
+        total_words = len(llm_response.split())
+        ad_word_count = 0
+        for ad_content in ad_content_blocks:
+            ad_word_count += len(ad_content.split())
+
+        # Calculate ad word ratio
+        if total_words > 0:
+            ad_word_ratio = round(ad_word_count / total_words, 2)
+        else:
+            ad_word_ratio = 0.0
+
+        # Check if overloaded
+        ratio_float = float(ad_word_ratio)
+        is_overloaded = ratio_float > OVERLOADED_VALUE
+
+        # Count sponsored labels
+        sponsored_labels_count = llm_response.count(enhancement_result.ad_response.sponsored_label)
+
+        # Format validation (default)
+        format_valid = DEFAULT_TRUE_VALUE
+
+        # General placement position
+        general_placement_position = self._calculate_placement_position(
+            llm_response, ad_content_blocks, tag_name, enhancement_result
+        )
+
+        # Scores (not implemented yet)
+        natural_flow_score = DEFAULT_NOT_IMPLEMENTED_VALUE
+        overall_response_score = DEFAULT_NOT_IMPLEMENTED_VALUE
+        ad_score = DEFAULT_NOT_IMPLEMENTED_VALUE
+
+        return Analytics(
+            total_ads_detected=total_ads_detected,
+            valid_links=valid_links,
+            invalid_links=invalid_links,
+            total_links=total_links,
+            total_words=total_words,
+            ad_word_ratio=ad_word_ratio,
+            is_overloaded=is_overloaded,
+            sponsored_labels_count=sponsored_labels_count,
+            format_valid=format_valid,
+            general_placement_position=general_placement_position,
+            natural_flow_score=natural_flow_score,
+            overall_response_score=overall_response_score,
+            ad_score=ad_score
+        )
+
+    def _calculate_placement_position(
+        self,
+        llm_response: str,
+        ad_content_blocks: list[str],
+        tag_name: str,
+        enhancement_result: EnhancementResult
+    ) -> str:
+        """Calculate where the ad is positioned in the response."""
+
+        if not ad_content_blocks:
+            return "none"
+
+        response_length = len(llm_response)
+        if response_length == 0:
+            return "unknown"
+
+        # Find the position of the first ad block based on wrapping type
+        if self._wrapping_type == "xml":
+            # For XML: look for <ADS> tag
+            pattern = rf'<{re.escape(tag_name)}>'
+            match = re.search(pattern, llm_response, re.IGNORECASE)
+        else:
+            # For plain: look for sponsored_label (start of ad block)
+            sponsored_label = enhancement_result.ad_response.sponsored_label
+            match = re.search(re.escape(sponsored_label), llm_response, re.IGNORECASE)
+
+        if not match:
+            return "unknown"
+
+        ad_start_position = match.start()
+        position_percentage = ad_start_position / response_length
+
+        # Determine placement based on position
+        if position_percentage <= 0.25:
+            return "top"
+        elif position_percentage <= 0.75:
+            return "middle"
+        else:
+            return "bottom"
+
+    def analyse_and_report(
+        self,
+        *,
+        enhancement_result: EnhancementResult,
+        llm_response: str,
+    ) -> None:
+        """
+        Analyze the LLM response and report ad acknowledgment to the backend.
+        Only reports if the enhancement was successful (ad was injected).
+
+        Args:
+            enhancement_result: The EnhancementResult from the ad request
+            llm_response: The actual response from the LLM
+        """
+        # Only analyze and report if enhancement was successful (ad was injected)
+        if not enhancement_result.success:
+            logger.debug(
+                "Skipping ad acknowledgment - no successful ad enhancement",
+                extra={"success": enhancement_result.success}
+            )
+            return
+
+        try:
+            # Build the AdAck payload
+            ad_ack = self._build_ad_ack(enhancement_result, llm_response)
+
+            # Send to backend
+            self._send_ad_ack(ad_ack)
+
+        except Exception as exc:
+            logger.error("Failed to analyze and report ad acknowledgment", exc_info=exc)
+            # Even if analysis fails, we still need to report with error tracking
+            try:
+                error_ad_ack = self._build_error_ad_ack(enhancement_result, llm_response, exc)
+                self._send_ad_ack(error_ad_ack)
+            except Exception as inner_exc:
+                logger.error("Failed to send error ad acknowledgment", exc_info=inner_exc)
+
+    async def analyse_and_report_async(
+        self,
+        *,
+        enhancement_result: EnhancementResult,
+        llm_response: str,
+    ) -> None:
+        """
+        Async version of analyze and report ad acknowledgment to the backend.
+        Only reports if the enhancement was successful (ad was injected).
+
+        Args:
+            enhancement_result: The EnhancementResult from the ad request
+            llm_response: The actual response from the LLM
+        """
+        # Only analyze and report if enhancement was successful (ad was injected)
+        if not enhancement_result.success:
+            logger.debug(
+                "Skipping ad acknowledgment - no successful ad enhancement",
+                extra={"success": enhancement_result.success}
+            )
+            return
+
+        try:
+            # Build the AdAck payload
+            ad_ack = self._build_ad_ack(enhancement_result, llm_response)
+
+            # Send to backend
+            await self._send_ad_ack_async(ad_ack)
+
+        except Exception as exc:
+            logger.error("Failed to analyze and report ad acknowledgment", exc_info=exc)
+            # Even if analysis fails, we still need to report with error tracking
+            try:
+                error_ad_ack = self._build_error_ad_ack(enhancement_result, llm_response, exc)
+                await self._send_ad_ack_async(error_ad_ack)
+            except Exception as inner_exc:
+                logger.error("Failed to send error ad acknowledgment", exc_info=inner_exc)
+
+    def _build_ad_ack(
+        self,
+        enhancement_result: EnhancementResult,
+        llm_response: str,
+        error: Optional[Exception] = None
+    ) -> AdAck:
+        """Build AdAck payload from enhancement result and LLM response."""
+
+        # Get ad_response_id from the enhancement result
+        ad_response_id = enhancement_result.ad_response.ad_response_id
+        execution_time_ms = enhancement_result.ad_response.execution_time_ms
+
+        # Build diagnostics
+        diagnostics = Diagnostics(
+            sdk_type=SDK_TYPE,
+            sdk_version=SDK_VERSION,
+            sdk_name=SDK_NAME
+        )
+
+        # Build compliance
+        analytics = self._build_analytics(enhancement_result, llm_response)
+        max_ads_policy_ok = analytics.total_ads_detected <= DEFAULT_MAX_ADS
+        max_latency_policy_ok = execution_time_ms <= (DEFAULT_MAX_LATENCY * 1000)  # Convert to ms
+
+        compliance = Compliance(
+            max_ads_policy_ok=max_ads_policy_ok,
+            max_latency_policy_ok=max_latency_policy_ok
+        )
+
+        # Build external metadata
+        response_hash = self._hash_response(llm_response)
+        aepi_checksum = self._calculate_checksum(enhancement_result.ad_response.aepi.aepi_text)
+
+        # Create externalMetadata
+        original_message_id = enhancement_result.conversation.message_id
+        assistant_message_id = original_message_id.replace("msg_u_", "msg_a_")
+
+        external_metadata = ExternalMetadata(
+            response_hash=response_hash,
+            aepi_checksum=aepi_checksum,
+            conversation_id=enhancement_result.conversation.conversation_id,
+            session_id=enhancement_result.conversation.session_id,
+            message_id=assistant_message_id
+        )
+
+        # Build error tracking
+        error_tracking = None
+        if error:
+            error_tracking = ErrorTracking(
+                error_code=DEFAULT_ERROR_CODE,
+                error_message=str(error)
+            )
+
+        if error:
+            ad_status = "error"
+        else:
+            ad_status = "ok" if analytics.total_ads_detected >= DEFAULT_MAX_ADS else "no_ad_used"
+
+        return AdAck(
+            ad_response_id=ad_response_id,
+            ad_status=ad_status,
+            analytics=analytics,
+            diagnostics=diagnostics,
+            compliance=compliance,
+            error_tracking=error_tracking,
+            external_metadata=external_metadata
+        )
+
+    def _build_error_ad_ack(
+        self,
+        enhancement_result: EnhancementResult,
+        llm_response: str,
+        error: Exception
+    ) -> AdAck:
+        """Build AdAck payload for error cases."""
+        return self._build_ad_ack(enhancement_result, llm_response, error)
+
+    def _hash_response(self, response: str) -> str:
+        """Generate hash of the response."""
+        return hashlib.sha256(response.encode('utf-8')).hexdigest()
+
+    def _calculate_checksum(self, text: str) -> str:
+        """Calculate checksum of the aepi text."""
+        return hashlib.md5(text.encode('utf-8')).hexdigest()
+
+    def _ad_ack_endpoint(self) -> str:
+        """Get the ad acknowledgment endpoint URL."""
+        return f"{self._base_url}{AD_ACK_ENDPOINT}"
+
+    def _send_ad_ack(self, ad_ack: AdAck) -> None:
+        """Send AdAck payload to the backend."""
+        url = self._ad_ack_endpoint()
+        headers = self._build_headers()
+        payload = ad_ack.model_dump(exclude_none=True)
+
+        logger.debug("Sending ad acknowledgment", extra={"ad_response_id": ad_ack.ad_response_id})
+
+        try:
+            response = self._client.post(
+                url, json=payload, headers=headers, timeout=self._timeout
+            )
+
+            if not (200 <= response.status_code < 300):
+                logger.warning(
+                    "Ad acknowledgment failed",
+                    extra={
+                        "status_code": response.status_code,
+                        "response": _snippet(response)
+                    }
+                )
+        except Exception as exc:
+            logger.error("Failed to send ad acknowledgment", exc_info=exc)
+
+    async def _send_ad_ack_async(self, ad_ack: AdAck) -> None:
+        """Send AdAck payload to the backend asynchronously."""
+        url = self._ad_ack_endpoint()
+        headers = self._build_headers()
+        payload = ad_ack.model_dump()
+
+        logger.debug("Sending ad acknowledgment async", extra={"ad_response_id": ad_ack.ad_response_id})
+
+        try:
+            response = await self._async_client.post(
+                url, json=payload, headers=headers, timeout=self._timeout
+            )
+
+            if not (200 <= response.status_code < 300):
+                logger.warning(
+                    "Ad acknowledgment failed",
+                    extra={
+                        "status_code": response.status_code,
+                        "response": _snippet(response)
+                    }
+                )
+        except Exception as exc:
+            logger.error("Failed to send ad acknowledgment", exc_info=exc)
 
 
 def _snippet(response: httpx.Response, limit: int = 200) -> Optional[str]:

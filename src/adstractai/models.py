@@ -13,12 +13,80 @@ from adstractai.errors import ValidationError
 _SEMVER_RE = re.compile(r"^\d+\.\d+\.\d+$")
 
 
-class EnhancementResult(BaseModel):
-    """Result of an ad enhancement request."""
+class Analytics(BaseModel):
+    """Analytics data for ad acknowledgment."""
     model_config = ConfigDict(extra="forbid")
 
-    prompt: str
+    total_ads_detected: int
+    valid_links: int
+    invalid_links: int
+    total_links: int
+    total_words: int
+    ad_word_ratio: float
+    is_overloaded: bool
+    sponsored_labels_count: int
+    format_valid: bool
+    general_placement_position: str
+    natural_flow_score: float
+    overall_response_score: float
+    ad_score: float
+
+
+class Diagnostics(BaseModel):
+    """Diagnostics information for ad acknowledgment."""
+    model_config = ConfigDict(extra="forbid")
+
+    sdk_type: str
+    sdk_version: str
+    sdk_name: str
+
+
+class Compliance(BaseModel):
+    """Compliance information for ad acknowledgment."""
+    model_config = ConfigDict(extra="forbid")
+
+    max_ads_policy_ok: bool
+    max_latency_policy_ok: bool
+
+
+class ErrorTracking(BaseModel):
+    """Error tracking information for ad acknowledgment."""
+    model_config = ConfigDict(extra="forbid")
+
+    error_code: str
+    error_message: Optional[str]
+
+
+class ExternalMetadata(BaseModel):
+    """External metadata for ad acknowledgment."""
+    model_config = ConfigDict(extra="forbid")
+
+    response_hash: str
+    aepi_checksum: str
+    conversation_id: str
     session_id: str
+    message_id: str
+
+
+class AdAck(BaseModel):
+    """Ad acknowledgment payload."""
+    model_config = ConfigDict(extra="forbid")
+
+    ad_response_id: str
+    ad_status: str
+    analytics: Optional[Analytics] = None
+    diagnostics: Optional[Diagnostics] = None
+    compliance: Optional[Compliance] = None
+    error_tracking: Optional[ErrorTracking] = None
+    external_metadata: Optional[ExternalMetadata] = None
+
+
+class EnhancementResult(BaseModel):
+    """Result of an ad request."""
+    model_config = ConfigDict(extra="forbid", arbitrary_types_allowed=True)
+
+    prompt: str
+    conversation: Conversation
     ad_response: Optional["AdResponse"]
     success: bool
     error: Optional[Exception] = None
@@ -55,23 +123,13 @@ class ClientMetadata(BaseModel):
 
 
 class AdRequestConfiguration(BaseModel):
-    """Configuration for ad enhancement requests."""
+    """Configuration for ad requests."""
     model_config = ConfigDict(extra="forbid")
 
     session_id: Optional[str] = None
     conversation: Optional[Conversation] = None
     user_agent: str
     x_forwarded_for: str
-    wrapping_type: Optional[str] = None
-
-    @field_validator("wrapping_type")
-    @classmethod
-    def _validate_wrapping_type(cls, value: Optional[str]) -> Optional[str]:
-        if value is None:
-            return None
-        if value not in {"xml", "plain"}:
-            raise ValueError("wrapping_type must be 'xml' or 'plain'")
-        return value
 
 
 class Metadata(BaseModel):
