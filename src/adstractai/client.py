@@ -80,17 +80,17 @@ class Adstract:
     """Client for sending ad requests to the Adstract backend."""
 
     def __init__(
-            self,
-            *,
-            api_key: Optional[str] = None,
-            base_url: Optional[str] = None,
-            timeout: float = DEFAULT_TIMEOUT_SECONDS,
-            retries: int = DEFAULT_RETRIES,
-            backoff_factor: float = 0.5,
-            max_backoff: float = 8.0,
-            http_client: Optional[httpx.Client] = None,
-            async_http_client: Optional[httpx.AsyncClient] = None,
-            wrapping_type: Optional[Literal["xml", "plain"]] = None,
+        self,
+        *,
+        api_key: Optional[str] = None,
+        base_url: Optional[str] = None,
+        timeout: float = DEFAULT_TIMEOUT_SECONDS,
+        retries: int = DEFAULT_RETRIES,
+        backoff_factor: float = 0.5,
+        max_backoff: float = 8.0,
+        http_client: Optional[httpx.Client] = None,
+        async_http_client: Optional[httpx.AsyncClient] = None,
+        wrapping_type: Optional[Literal["xml", "plain"]] = None,
     ) -> None:
         """
         Initialize the Adstract client.
@@ -161,7 +161,7 @@ class Adstract:
             raise MissingParameterError("x_forwarded_for parameter is required")
 
     def _resolve_conversation(
-            self, session_id: Optional[str], conversation: Optional[Conversation]
+        self, session_id: Optional[str], conversation: Optional[Conversation]
     ) -> Conversation:
         """
         Resolve conversation object from session_id or conversation parameter.
@@ -187,10 +187,10 @@ class Adstract:
             raise MissingParameterError("Either session_id or conversation parameter is required")
 
     def _build_ad_request(
-            self,
-            *,
-            prompt: str,
-            config: AdRequestConfiguration,
+        self,
+        *,
+        prompt: str,
+        config: AdRequestConfiguration,
     ) -> dict[str, Any]:
         """
         Build the complete ad request payload.
@@ -222,13 +222,13 @@ class Adstract:
         return request_model.to_payload()
 
     def _build_ad_enchancment_result(
-            self,
-            *,
-            prompt: str,
-            conversation: Conversation,
-            ad_response: Optional[AdResponse],
-            success: bool,
-            error: Optional[Exception] = None,
+        self,
+        *,
+        prompt: str,
+        conversation: Conversation,
+        ad_response: Optional[AdResponse],
+        success: bool,
+        error: Optional[Exception] = None,
     ) -> EnhancementResult:
         """
         Build an EnhancementResult object from ad request components.
@@ -252,10 +252,10 @@ class Adstract:
         )
 
     def request_ad_or_default(
-            self,
-            *,
-            prompt: str,
-            config: AdRequestConfiguration,
+        self,
+        *,
+        prompt: str,
+        config: AdRequestConfiguration,
     ) -> EnhancementResult:
         """
         Request ad enhancement with graceful fallback to original prompt.
@@ -331,10 +331,10 @@ class Adstract:
             )
 
     async def request_ad_or_default_async(
-            self,
-            *,
-            prompt: str,
-            config: AdRequestConfiguration,
+        self,
+        *,
+        prompt: str,
+        config: AdRequestConfiguration,
     ) -> EnhancementResult:
         """
         Asynchronously request ad enhancement with graceful fallback to original prompt.
@@ -585,7 +585,7 @@ class Adstract:
         Args:
             attempt: Current attempt number (0-based)
         """
-        delay = min(self._backoff_factor * (2 ** attempt), self._max_backoff)
+        delay = min(self._backoff_factor * (2**attempt), self._max_backoff)
         time.sleep(delay)
 
     async def _sleep_backoff_async(self, attempt: int) -> None:
@@ -595,7 +595,7 @@ class Adstract:
         Args:
             attempt: Current attempt number (0-based)
         """
-        delay = min(self._backoff_factor * (2 ** attempt), self._max_backoff)
+        delay = min(self._backoff_factor * (2**attempt), self._max_backoff)
         await asyncio.sleep(delay)
 
     def _build_headers(self) -> dict[str, str]:
@@ -612,10 +612,10 @@ class Adstract:
         }
 
     def _build_metadata(
-            self,
-            *,
-            user_agent: str,
-            x_forwarded_for: str,
+        self,
+        *,
+        user_agent: str,
+        x_forwarded_for: str,
     ) -> Metadata:
         """
         Build metadata object for API requests.
@@ -688,8 +688,7 @@ class Adstract:
         invalid_links = DEFAULT_NOT_IMPLEMENTED_VALUE
 
         # Total links from tracking_url in AdResponse
-        total_links = llm_response.count(
-            enhancement_result.ad_response.tracking_url)  # pyright: ignore[reportArgumentType]
+        total_links = llm_response.count(enhancement_result.ad_response.tracking_url)  # pyright: ignore[reportArgumentType]
 
         # Word count analysis
         total_words = len(llm_response.split())
@@ -705,8 +704,7 @@ class Adstract:
         is_overloaded = ratio_float > OVERLOADED_VALUE
 
         # Count sponsored labels
-        sponsored_labels_count = llm_response.count(
-            enhancement_result.ad_response.sponsored_label)  # pyright: ignore[reportArgumentType]
+        sponsored_labels_count = llm_response.count(enhancement_result.ad_response.sponsored_label)  # pyright: ignore[reportArgumentType]
 
         # Format validation (default)
         format_valid = DEFAULT_TRUE_VALUE
@@ -738,11 +736,11 @@ class Adstract:
         )
 
     def _calculate_placement_position(
-            self,
-            llm_response: str,
-            ad_content_blocks: list[str],
-            tag_name: str,
-            enhancement_result: EnhancementResult,
+        self,
+        llm_response: str,
+        ad_content_blocks: list[str],
+        tag_name: str,
+        enhancement_result: EnhancementResult,
     ) -> str:
         """
         Calculate where the ad is positioned in the response.
@@ -791,10 +789,10 @@ class Adstract:
             return "bottom"
 
     def analyse_and_report(
-            self,
-            *,
-            enhancement_result: EnhancementResult,
-            llm_response: str,
+        self,
+        *,
+        enhancement_result: EnhancementResult,
+        llm_response: str,
     ) -> None:
         """
         Analyze the LLM response and report ad acknowledgment to the backend.
@@ -852,10 +850,10 @@ class Adstract:
             raise analysis_error
 
     async def analyse_and_report_async(
-            self,
-            *,
-            enhancement_result: EnhancementResult,
-            llm_response: str,
+        self,
+        *,
+        enhancement_result: EnhancementResult,
+        llm_response: str,
     ) -> None:
         """
         Async version of analyze and report ad acknowledgment to the backend.
@@ -909,10 +907,10 @@ class Adstract:
             raise analysis_error
 
     def _build_ad_ack(
-            self,
-            enhancement_result: EnhancementResult,
-            llm_response: str,
-            error: Optional[Exception] = None,
+        self,
+        enhancement_result: EnhancementResult,
+        llm_response: str,
+        error: Optional[Exception] = None,
     ) -> AdAck:
         """
         Build AdAck payload from enhancement result and LLM response.
@@ -981,7 +979,7 @@ class Adstract:
         )
 
     def _build_error_ad_ack(
-            self, enhancement_result: EnhancementResult, llm_response: str, error: Exception
+        self, enhancement_result: EnhancementResult, llm_response: str, error: Exception
     ) -> AdAck:
         """
         Build AdAck payload for error cases.
