@@ -836,9 +836,14 @@ class Adstract:
             enhancement_result: The EnhancementResult from the ad request
             llm_response: The actual response from the LLM
 
+        Raises:
+            Exception: Re-raises any exception that occurred during analysis after
+                      reporting it to the backend with error tracking information.
+
         Note:
-            This method never raises exceptions. Errors are logged and reported
-            to the backend with appropriate error tracking information.
+            This method always reports to the backend first, then re-raises any
+            errors that occurred during the analysis process. This ensures backend
+            tracking while still propagating errors to the caller.
         """
         # Only analyze and report if enhancement was successful (ad was injected)
         if not enhancement_result.success:
@@ -848,6 +853,8 @@ class Adstract:
             )
             return
 
+        analysis_error = None
+
         try:
             # Build the AdAck payload
             ad_ack = self._build_ad_ack(enhancement_result, llm_response)
@@ -856,6 +863,7 @@ class Adstract:
             self._send_ad_ack(ad_ack)
 
         except Exception as exc:
+            analysis_error = exc
             logger.error("Failed to analyze and report ad acknowledgment", exc_info=exc)
             # Even if analysis fails, we still need to report with error tracking
             try:
@@ -863,6 +871,10 @@ class Adstract:
                 self._send_ad_ack(error_ad_ack)
             except Exception as inner_exc:
                 logger.error("Failed to send error ad acknowledgment", exc_info=inner_exc)
+
+        # Re-raise the original analysis error after reporting
+        if analysis_error:
+            raise analysis_error
 
     async def analyse_and_report_async(
             self,
@@ -881,9 +893,14 @@ class Adstract:
             enhancement_result: The EnhancementResult from the ad request
             llm_response: The actual response from the LLM
 
+        Raises:
+            Exception: Re-raises any exception that occurred during analysis after
+                      reporting it to the backend with error tracking information.
+
         Note:
-            This method never raises exceptions. Errors are logged and reported
-            to the backend with appropriate error tracking information.
+            This method always reports to the backend first, then re-raises any
+            errors that occurred during the analysis process. This ensures backend
+            tracking while still propagating errors to the caller.
         """
         # Only analyze and report if enhancement was successful (ad was injected)
         if not enhancement_result.success:
@@ -893,6 +910,8 @@ class Adstract:
             )
             return
 
+        analysis_error = None
+
         try:
             # Build the AdAck payload
             ad_ack = self._build_ad_ack(enhancement_result, llm_response)
@@ -901,6 +920,7 @@ class Adstract:
             await self._send_ad_ack_async(ad_ack)
 
         except Exception as exc:
+            analysis_error = exc
             logger.error("Failed to analyze and report ad acknowledgment", exc_info=exc)
             # Even if analysis fails, we still need to report with error tracking
             try:
@@ -908,6 +928,10 @@ class Adstract:
                 await self._send_ad_ack_async(error_ad_ack)
             except Exception as inner_exc:
                 logger.error("Failed to send error ad acknowledgment", exc_info=inner_exc)
+
+        # Re-raise the original analysis error after reporting
+        if analysis_error:
+            raise analysis_error
 
     def _build_ad_ack(
             self,

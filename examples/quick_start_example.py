@@ -24,7 +24,6 @@ def main():
 
     prompt = "What are some good ways to advertise with AI ?"
 
-    client.request_ad_or_default()
 
     try:
         # Step 1: Get ad enhancement
