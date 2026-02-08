@@ -1,4 +1,5 @@
 """HTTP client for the Adstract AI SDK."""
+# pyright: reportOptionalMemberAccess=false
 
 from __future__ import annotations
 
@@ -10,7 +11,7 @@ import os
 import re
 import time
 from importlib import metadata as importlib_metadata
-from typing import Any, Optional, Literal
+from typing import Any, Literal, Optional
 
 import httpx
 
@@ -19,21 +20,25 @@ from adstractai.constants import (
     AD_INJECTION_ENDPOINT,
     API_KEY_HEADER_NAME,
     BASE_URL,
+    BOTTOM_PLACMENT_PERCENTAGE,
     DEFAULT_ERROR_CODE,
     DEFAULT_MAX_ADS,
     DEFAULT_MAX_LATENCY,
     DEFAULT_NOT_IMPLEMENTED_VALUE,
-    PLAIN_TAG,
     DEFAULT_RETRIES,
     DEFAULT_TIMEOUT_SECONDS,
-    XML_TAG,
+    DEFAULT_TRUE_VALUE,
     ENV_API_KEY_NAME,
     MAX_RETRIES,
+    MIDDLE_PLACMENT_PERCENTAGE,
     OVERLOADED_VALUE,
+    PLAIN_TAG,
     SDK_HEADER_NAME,
     SDK_NAME,
+    SDK_TYPE,
     SDK_VERSION,
-    SDK_VERSION_HEADER_NAME, DEFAULT_TRUE_VALUE, SDK_TYPE,
+    SDK_VERSION_HEADER_NAME,
+    XML_TAG,
 )
 from adstractai.errors import (
     AdSDKError,
@@ -148,13 +153,15 @@ class Adstract:
         """
         if not user_agent:
             raise MissingParameterError("user_agent parameter is required")
+        if user_agent == "":
+            raise MissingParameterError("user_agent parameter is required")
         if not x_forwarded_for:
+            raise MissingParameterError("x_forwarded_for parameter is required")
+        if x_forwarded_for == "":
             raise MissingParameterError("x_forwarded_for parameter is required")
 
     def _resolve_conversation(
-            self,
-            session_id: Optional[str],
-            conversation: Optional[Conversation]
+            self, session_id: Optional[str], conversation: Optional[Conversation]
     ) -> Conversation:
         """
         Resolve conversation object from session_id or conversation parameter.
@@ -175,11 +182,7 @@ class Adstract:
         elif session_id is not None:
             # Create conversation from session_id
             msg_timestamp = f"msg_u_{str(int(time.time() * 1000))}"
-            return Conversation(
-                conversation_id=session_id,
-                session_id=session_id,
-                message_id=msg_timestamp
-            )
+            return Conversation(conversation_id=session_id, session_id=session_id, message_id=msg_timestamp)
         else:
             raise MissingParameterError("Either session_id or conversation parameter is required")
 
@@ -298,9 +301,7 @@ class Adstract:
             response = self._send_request(payload)
 
             # Check if ad request was successful and has aepi data
-            if (
-                    response.success
-            ):
+            if response.success:
                 return self._build_ad_enchancment_result(
                     prompt=response.aepi.aepi_text,
                     conversation=conversation_obj,
@@ -309,9 +310,7 @@ class Adstract:
                     error=None,
                 )
             else:
-                logger.debug(
-                    "Ad request not successful or missing aepi data, returning original prompt"
-                )
+                logger.debug("Ad request not successful or missing aepi data, returning original prompt")
                 return self._build_ad_enchancment_result(
                     prompt=prompt,
                     conversation=conversation_obj,
@@ -321,17 +320,12 @@ class Adstract:
                 )
 
         except Exception as exc:
-            logger.debug(
-                "Ad request failed with exception, returning original prompt", exc_info=exc
-            )
-            # Create a mock AdResponse for the error case since we don't have a real response
-            from adstractai.models import AdResponse
-            mock_response = AdResponse(raw={})
+            logger.debug("Ad request failed with exception, returning original prompt", exc_info=exc)
 
             return self._build_ad_enchancment_result(
                 prompt=prompt,
                 conversation=conversation_obj,
-                ad_response=mock_response,
+                ad_response=None,
                 success=False,
                 error=exc,
             )
@@ -390,9 +384,7 @@ class Adstract:
             response = await self._send_request_async(payload)
 
             # Check if ad request was successful and has aepi data
-            if (
-                    response.success
-            ):
+            if response.success:
                 return self._build_ad_enchancment_result(
                     prompt=response.aepi.aepi_text,
                     conversation=conversation_obj,
@@ -401,9 +393,7 @@ class Adstract:
                     error=None,
                 )
             else:
-                logger.debug(
-                    "Ad request not successful or missing aepi data, returning original prompt"
-                )
+                logger.debug("Ad request not successful or missing aepi data, returning original prompt")
                 return self._build_ad_enchancment_result(
                     prompt=prompt,
                     conversation=conversation_obj,
@@ -413,17 +403,12 @@ class Adstract:
                 )
 
         except Exception as exc:
-            logger.debug(
-                "Ad request failed with exception, returning original prompt", exc_info=exc
-            )
-            # Create a mock AdResponse for the error case since we don't have a real response
-            from adstractai.models import AdResponse
-            mock_response = AdResponse(raw={})
+            logger.debug("Ad request failed with exception, returning original prompt", exc_info=exc)
 
             return self._build_ad_enchancment_result(
                 prompt=prompt,
                 conversation=conversation_obj,
-                ad_response=mock_response,
+                ad_response=None,
                 success=False,
                 error=exc,
             )
@@ -458,9 +443,7 @@ class Adstract:
         headers = self._build_headers()
         for attempt in range(self._retries + 1):
             try:
-                response = self._client.post(
-                    url, json=payload, headers=headers, timeout=self._timeout
-                )
+                response = self._client.post(url, json=payload, headers=headers, timeout=self._timeout)
             except (httpx.TimeoutException, httpx.TransportError) as exc:
                 logger.debug("Network error on attempt %s", attempt + 1)
                 if attempt >= self._retries:
@@ -658,11 +641,7 @@ class Adstract:
         except Exception as exc:
             raise ValidationError("Failed to build metadata") from exc
 
-    def _build_analytics(
-            self,
-            enhancement_result: EnhancementResult,
-            llm_response: str
-    ) -> Analytics:
+    def _build_analytics(self, enhancement_result: EnhancementResult, llm_response: str) -> Analytics:
         """
         Build analytics data from enhancement result and LLM response.
 
@@ -681,23 +660,20 @@ class Adstract:
             Analytics: Complete analytics data for the ad acknowledgment
         """
         # Determine wrapping tags based on wrapping_type
-        if self._wrapping_type == "xml":
-            tag_name = XML_TAG
-        else:  # plain or None
-            tag_name = PLAIN_TAG
+        tag_name = XML_TAG if self._wrapping_type == "xml" else PLAIN_TAG
 
         # Extract ad content blocks differently based on wrapping type
         ad_content_blocks = []
 
         if self._wrapping_type == "xml":
             # For XML: get content between <ADS> and </ADS>
-            pattern = rf'<{re.escape(tag_name)}>(.*?)</{re.escape(tag_name)}>'
+            pattern = rf"<{re.escape(tag_name)}>(.*?)</{re.escape(tag_name)}>"
             ad_content_blocks = re.findall(pattern, llm_response, re.DOTALL | re.IGNORECASE)
         else:
             # For plain: get content between sponsored_label and DEFAULT_PLAIN_TAG
             sponsored_label = enhancement_result.ad_response.sponsored_label
             # Pattern: from sponsored_label to DEFAULT_PLAIN_TAG
-            pattern = rf'{re.escape(sponsored_label)}(.*?){re.escape(tag_name)}'
+            pattern = rf"{re.escape(sponsored_label)}(.*?){re.escape(tag_name)}"  # pyright: ignore[reportArgumentType]
             ad_content_blocks = re.findall(pattern, llm_response, re.DOTALL | re.IGNORECASE)
 
         # Calculate total_ads_detected by counting tracking_identifier occurrences in ad blocks
@@ -712,7 +688,8 @@ class Adstract:
         invalid_links = DEFAULT_NOT_IMPLEMENTED_VALUE
 
         # Total links from tracking_url in AdResponse
-        total_links = llm_response.count(enhancement_result.ad_response.tracking_url)
+        total_links = llm_response.count(
+            enhancement_result.ad_response.tracking_url)  # pyright: ignore[reportArgumentType]
 
         # Word count analysis
         total_words = len(llm_response.split())
@@ -721,17 +698,15 @@ class Adstract:
             ad_word_count += len(ad_content.split())
 
         # Calculate ad word ratio
-        if total_words > 0:
-            ad_word_ratio = round(ad_word_count / total_words, 2)
-        else:
-            ad_word_ratio = 0.0
+        ad_word_ratio = round(ad_word_count / total_words, 2) if total_words > 0 else 0.0
 
         # Check if overloaded
         ratio_float = float(ad_word_ratio)
         is_overloaded = ratio_float > OVERLOADED_VALUE
 
         # Count sponsored labels
-        sponsored_labels_count = llm_response.count(enhancement_result.ad_response.sponsored_label)
+        sponsored_labels_count = llm_response.count(
+            enhancement_result.ad_response.sponsored_label)  # pyright: ignore[reportArgumentType]
 
         # Format validation (default)
         format_valid = DEFAULT_TRUE_VALUE
@@ -759,7 +734,7 @@ class Adstract:
             general_placement_position=general_placement_position,
             natural_flow_score=natural_flow_score,
             overall_response_score=overall_response_score,
-            ad_score=ad_score
+            ad_score=ad_score,
         )
 
     def _calculate_placement_position(
@@ -767,7 +742,7 @@ class Adstract:
             llm_response: str,
             ad_content_blocks: list[str],
             tag_name: str,
-            enhancement_result: EnhancementResult
+            enhancement_result: EnhancementResult,
     ) -> str:
         """
         Calculate where the ad is positioned in the response.
@@ -794,12 +769,12 @@ class Adstract:
         # Find the position of the first ad block based on wrapping type
         if self._wrapping_type == "xml":
             # For XML: look for <ADS> tag
-            pattern = rf'<{re.escape(tag_name)}>'
+            pattern = rf"<{re.escape(tag_name)}>"
             match = re.search(pattern, llm_response, re.IGNORECASE)
         else:
             # For plain: look for sponsored_label (start of ad block)
             sponsored_label = enhancement_result.ad_response.sponsored_label
-            match = re.search(re.escape(sponsored_label), llm_response, re.IGNORECASE)
+            match = re.search(re.escape(sponsored_label), llm_response, re.IGNORECASE)  # pyright: ignore[reportArgumentType]
 
         if not match:
             return "unknown"
@@ -808,9 +783,9 @@ class Adstract:
         position_percentage = ad_start_position / response_length
 
         # Determine placement based on position
-        if position_percentage <= 0.25:
+        if position_percentage <= BOTTOM_PLACMENT_PERCENTAGE:
             return "top"
-        elif position_percentage <= 0.75:
+        elif position_percentage <= MIDDLE_PLACMENT_PERCENTAGE:
             return "middle"
         else:
             return "bottom"
@@ -849,7 +824,7 @@ class Adstract:
         if not enhancement_result.success:
             logger.debug(
                 "Skipping ad acknowledgment - no successful ad enhancement",
-                extra={"success": enhancement_result.success}
+                extra={"success": enhancement_result.success},
             )
             return
 
@@ -906,7 +881,7 @@ class Adstract:
         if not enhancement_result.success:
             logger.debug(
                 "Skipping ad acknowledgment - no successful ad enhancement",
-                extra={"success": enhancement_result.success}
+                extra={"success": enhancement_result.success},
             )
             return
 
@@ -937,7 +912,7 @@ class Adstract:
             self,
             enhancement_result: EnhancementResult,
             llm_response: str,
-            error: Optional[Exception] = None
+            error: Optional[Exception] = None,
     ) -> AdAck:
         """
         Build AdAck payload from enhancement result and LLM response.
@@ -958,11 +933,7 @@ class Adstract:
         execution_time_ms = enhancement_result.ad_response.execution_time_ms
 
         # Build diagnostics
-        diagnostics = Diagnostics(
-            sdk_type=SDK_TYPE,
-            sdk_version=SDK_VERSION,
-            sdk_name=SDK_NAME
-        )
+        diagnostics = Diagnostics(sdk_type=SDK_TYPE, sdk_version=SDK_VERSION, sdk_name=SDK_NAME)
 
         # Build compliance
         analytics = self._build_analytics(enhancement_result, llm_response)
@@ -970,8 +941,7 @@ class Adstract:
         max_latency_policy_ok = execution_time_ms <= (DEFAULT_MAX_LATENCY * 1000)  # Convert to ms
 
         compliance = Compliance(
-            max_ads_policy_ok=max_ads_policy_ok,
-            max_latency_policy_ok=max_latency_policy_ok
+            max_ads_policy_ok=max_ads_policy_ok, max_latency_policy_ok=max_latency_policy_ok
         )
 
         # Build external metadata
@@ -987,16 +957,13 @@ class Adstract:
             aepi_checksum=aepi_checksum,
             conversation_id=enhancement_result.conversation.conversation_id,
             session_id=enhancement_result.conversation.session_id,
-            message_id=assistant_message_id
+            message_id=assistant_message_id,
         )
 
         # Build error tracking
         error_tracking = None
         if error:
-            error_tracking = ErrorTracking(
-                error_code=DEFAULT_ERROR_CODE,
-                error_message=str(error)
-            )
+            error_tracking = ErrorTracking(error_code=DEFAULT_ERROR_CODE, error_message=str(error))
 
         if error:
             ad_status = "error"
@@ -1010,14 +977,11 @@ class Adstract:
             diagnostics=diagnostics,
             compliance=compliance,
             error_tracking=error_tracking,
-            external_metadata=external_metadata
+            external_metadata=external_metadata,
         )
 
     def _build_error_ad_ack(
-            self,
-            enhancement_result: EnhancementResult,
-            llm_response: str,
-            error: Exception
+            self, enhancement_result: EnhancementResult, llm_response: str, error: Exception
     ) -> AdAck:
         """
         Build AdAck payload for error cases.
@@ -1047,7 +1011,7 @@ class Adstract:
         Returns:
             str: SHA256 hash of the response as hexadecimal string
         """
-        return hashlib.sha256(response.encode('utf-8')).hexdigest()
+        return hashlib.sha256(response.encode("utf-8")).hexdigest()
 
     def _calculate_checksum(self, text: str) -> str:
         """
@@ -1062,7 +1026,7 @@ class Adstract:
             str: MD5 checksum as hexadecimal string
         """
         """Calculate checksum of the aepi text."""
-        return hashlib.md5(text.encode('utf-8')).hexdigest()
+        return hashlib.md5(text.encode("utf-8")).hexdigest()
 
     def _ad_ack_endpoint(self) -> str:
         """
@@ -1094,17 +1058,12 @@ class Adstract:
         logger.debug("Sending ad acknowledgment", extra={"ad_response_id": ad_ack.ad_response_id})
 
         try:
-            response = self._client.post(
-                url, json=payload, headers=headers, timeout=self._timeout
-            )
+            response = self._client.post(url, json=payload, headers=headers, timeout=self._timeout)
 
-            if not (200 <= response.status_code < 300):
+            if response.status_code not in {200, 201}:
                 logger.warning(
                     "Ad acknowledgment failed",
-                    extra={
-                        "status_code": response.status_code,
-                        "response": _snippet(response)
-                    }
+                    extra={"status_code": response.status_code, "response": _snippet(response)},
                 )
         except Exception as exc:
             logger.error("Failed to send ad acknowledgment", exc_info=exc)
@@ -1131,13 +1090,10 @@ class Adstract:
                 url, json=payload, headers=headers, timeout=self._timeout
             )
 
-            if not (200 <= response.status_code < 300):
+            if response.status_code not in {200, 201}:
                 logger.warning(
                     "Ad acknowledgment failed",
-                    extra={
-                        "status_code": response.status_code,
-                        "response": _snippet(response)
-                    }
+                    extra={"status_code": response.status_code, "response": _snippet(response)},
                 )
         except Exception as exc:
             logger.error("Failed to send ad acknowledgment", exc_info=exc)

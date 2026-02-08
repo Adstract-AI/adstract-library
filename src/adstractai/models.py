@@ -35,6 +35,7 @@ class Analytics(BaseModel):
         overall_response_score: Overall response quality score (implementation pending)
         ad_score: Advertisement effectiveness score (implementation pending)
     """
+
     model_config = ConfigDict(extra="forbid")
 
     total_ads_detected: int
@@ -63,6 +64,7 @@ class Diagnostics(BaseModel):
         sdk_version: Version string of the SDK (e.g., "1.2.3")
         sdk_name: Name identifier of the SDK package
     """
+
     model_config = ConfigDict(extra="forbid")
 
     sdk_type: str
@@ -80,6 +82,7 @@ class Compliance(BaseModel):
         max_ads_policy_ok: True if the number of ads is within policy limits
         max_latency_policy_ok: True if response latency is within acceptable bounds
     """
+
     model_config = ConfigDict(extra="forbid")
 
     max_ads_policy_ok: bool
@@ -96,6 +99,7 @@ class ErrorTracking(BaseModel):
         error_code: Standardized error code (e.g., "E0000" for success, custom codes for errors)
         error_message: Human-readable error description, None if no error occurred
     """
+
     model_config = ConfigDict(extra="forbid")
 
     error_code: str
@@ -115,6 +119,7 @@ class ExternalMetadata(BaseModel):
         session_id: Unique identifier for the user session
         message_id: Unique identifier for this specific message (changes from user to assistant)
     """
+
     model_config = ConfigDict(extra="forbid")
 
     response_hash: str
@@ -144,6 +149,7 @@ class AdAck(BaseModel):
         This model is used to report comprehensive ad acknowledgment data
         that enables backend tracking, analytics, and compliance monitoring.
     """
+
     model_config = ConfigDict(extra="forbid")
 
     ad_response_id: str
@@ -173,11 +179,12 @@ class EnhancementResult(BaseModel):
         This is the primary return type for all request_ad_* methods. The success
         field determines whether analytics should be performed and reported.
     """
+
     model_config = ConfigDict(extra="forbid", arbitrary_types_allowed=True)
 
     prompt: str
     conversation: Conversation
-    ad_response: Optional["AdResponse"]
+    ad_response: Optional[AdResponse]
     success: bool
     error: Optional[Exception] = None
 
@@ -198,6 +205,7 @@ class Conversation(BaseModel):
         The message_id format helps distinguish between user messages (msg_u_*)
         and assistant messages (msg_a_*) in analytics reporting.
     """
+
     model_config = ConfigDict(extra="forbid")
 
     conversation_id: str = Field(min_length=1)
@@ -226,6 +234,7 @@ class ClientMetadata(BaseModel):
         All fields are optional. The SDK automatically populates available
         fields based on request headers and user agent parsing.
     """
+
     model_config = ConfigDict(extra="forbid")
 
     ip_hash: Optional[str] = None
@@ -276,6 +285,7 @@ class AdRequestConfiguration(BaseModel):
         Either session_id or conversation must be provided. If both are given,
         the conversation object takes precedence and session_id is ignored.
     """
+
     model_config = ConfigDict(extra="forbid")
 
     session_id: Optional[str] = None
@@ -298,6 +308,7 @@ class Metadata(BaseModel):
         The client field is validated to ensure it's always present,
         as this information is essential for proper ad targeting.
     """
+
     model_config = ConfigDict(extra="forbid")
 
     client: Optional[ClientMetadata] = None
@@ -335,6 +346,7 @@ class AdRequest(BaseModel):
         This model handles validation and serialization of ad enhancement requests.
         The wrapping_type determines how ads are embedded in the enhanced prompt.
     """
+
     model_config = ConfigDict(extra="forbid")
 
     prompt: str = Field(min_length=3)
@@ -429,6 +441,7 @@ class AepiData(BaseModel):
         This model allows extra fields from the API response to be preserved
         for forward compatibility with API changes.
     """
+
     model_config = ConfigDict(extra="allow")
 
     status: str
@@ -445,7 +458,6 @@ class AdResponse(BaseModel):
     including the enhanced prompt, tracking information, and metadata.
 
     Attributes:
-        raw: Raw JSON response from the API (preserved for debugging)
         ad_request_id: Unique identifier for the original request
         ad_response_id: Unique identifier for this response
         success: Whether the ad enhancement was successful
@@ -460,13 +472,13 @@ class AdResponse(BaseModel):
         This model allows extra fields from the API response to be preserved
         for forward compatibility. All fields except 'raw' are optional.
     """
+
     model_config = ConfigDict(extra="allow")
 
-    raw: dict[str, Any]
-    ad_request_id: Optional[str] = None
-    ad_response_id: Optional[str] = None
+    ad_request_id: str
+    ad_response_id: str
     success: Optional[bool] = None
-    execution_time_ms: Optional[float] = None
+    execution_time_ms: float
     aepi: Optional[AepiData] = None
     tracking_url: Optional[str] = None
     tracking_identifier: Optional[str] = None

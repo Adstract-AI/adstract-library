@@ -11,19 +11,15 @@ def main():
     print("=== Quick Demo ===")
 
     # Initialize the client with XML wrapping type
-    client = Adstract(
-        api_key=API_KEY,
-        base_url="http://localhost:8000"
-    )
+    client = Adstract(api_key=API_KEY, base_url="http://localhost:8000")
 
     config = AdRequestConfiguration(
         session_id="user_session_123",
         user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        x_forwarded_for="192.168.1.1"
+        x_forwarded_for="192.168.1.1",
     )
 
     prompt = "What are some good ways to advertise with AI ?"
-
 
     try:
         # Step 1: Get ad enhancement
@@ -63,13 +59,9 @@ def main():
             """
 
             # Step 3: Analyze and report
-            client.analyse_and_report(
-                enhancement_result=result,
-                llm_response=llm_response
-            )
+            client.analyse_and_report(enhancement_result=result, llm_response=llm_response)
 
             print(f"✓ Ad ack report successful")
-
 
     except Exception as e:
         print(f"Error: {e}")
