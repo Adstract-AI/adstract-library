@@ -88,20 +88,47 @@ class Adstract:
         if self._owns_async_client:
             await self._async_client.aclose()
 
-    def request_ad_enhancement(
-        self,
-        *,
-        prompt: str,
-        conversation: dict[str, Any] | Conversation,
-        user_agent: str,
-        x_forwarded_for: str,
-        constraints: dict[str, Any] | Constraints | None = None,
-        wrapping_type: Literal["xml", "plain"] | None = None,
-    ) -> str:
+    def _validate_required_params(self, user_agent: str, x_forwarded_for: str) -> None:
+        """Validate required parameters for ad requests."""
         if not user_agent:
             raise MissingParameterError("user_agent parameter is required")
         if not x_forwarded_for:
             raise MissingParameterError("x_forwarded_for parameter is required")
+
+    def _resolve_conversation(
+        self,
+        session_id: str | None,
+        conversation: dict[str, Any] | Conversation | None
+    ) -> dict[str, Any] | Conversation:
+        """Resolve conversation object from session_id or conversation parameter."""
+        if conversation is not None:
+            # Use provided conversation, ignore session_id
+            return conversation
+        elif session_id is not None:
+            # Create conversation from session_id
+            msg_timestamp = str(int(time.time() * 1000))
+            return Conversation(
+                conversation_id=session_id,
+                session_id=session_id,
+                message_id=msg_timestamp
+            )
+        else:
+            raise MissingParameterError("Either session_id or conversation parameter is required")
+
+    def _build_ad_request(
+        self,
+        *,
+        prompt: str,
+        session_id: str | None,
+        conversation: dict[str, Any] | Conversation | None,
+        user_agent: str,
+        x_forwarded_for: str,
+        constraints: dict[str, Any] | Constraints | None = None,
+        wrapping_type: Literal["xml", "plain"] | None = None,
+    ) -> dict[str, Any]:
+        """Build the complete ad request payload."""
+        self._validate_required_params(user_agent, x_forwarded_for)
+        conversation_obj = self._resolve_conversation(session_id, conversation)
 
         metadata = self._build_metadata(
             user_agent=user_agent,
@@ -109,18 +136,15 @@ class Adstract:
         )
         request_model = AdRequest.from_values(
             prompt=prompt,
-            conversation=conversation,
+            conversation=conversation_obj,
             metadata=metadata,
             constraints=constraints,
             wrapping_type=wrapping_type,
         )
-        payload = request_model.to_payload()
-        logger.debug(
-            "Sending ad enhancement request", extra={"prompt_length": len(request_model.prompt)}
-        )
+        return request_model.to_payload()
 
-        response = self._send_request(payload)
-
+    def _validate_enhancement_response(self, response: AdResponse) -> str:
+        """Validate and extract aepi_text from enhancement response."""
         # Check if enhancement was successful
         if not response.success:
             raise AdEnhancementError(
@@ -139,37 +163,59 @@ class Adstract:
 
         return response.aepi.aepi_text
 
-    def request_ad_enhancement_or_default(
+    def request_ad_enhancement(
         self,
         *,
         prompt: str,
-        conversation: dict[str, Any] | Conversation,
+        session_id: str | None = None,
+        conversation: dict[str, Any] | Conversation | None = None,
         user_agent: str,
         x_forwarded_for: str,
         constraints: dict[str, Any] | Constraints | None = None,
         wrapping_type: Literal["xml", "plain"] | None = None,
     ) -> str:
-        if not user_agent:
-            raise MissingParameterError("user_agent parameter is required")
-        if not x_forwarded_for:
-            raise MissingParameterError("x_forwarded_for parameter is required")
+        payload = self._build_ad_request(
+            prompt=prompt,
+            session_id=session_id,
+            conversation=conversation,
+            user_agent=user_agent,
+            x_forwarded_for=x_forwarded_for,
+            constraints=constraints,
+            wrapping_type=wrapping_type,
+        )
 
+        logger.debug(
+            "Sending ad enhancement request", extra={"prompt_length": len(prompt)}
+        )
+
+        response = self._send_request(payload)
+        return self._validate_enhancement_response(response)
+
+    def request_ad_enhancement_or_default(
+        self,
+        *,
+        prompt: str,
+        session_id: str | None = None,
+        conversation: dict[str, Any] | Conversation | None = None,
+        user_agent: str,
+        x_forwarded_for: str,
+        constraints: dict[str, Any] | Constraints | None = None,
+        wrapping_type: Literal["xml", "plain"] | None = None,
+    ) -> str:
         try:
-            metadata = self._build_metadata(
+            payload = self._build_ad_request(
+                prompt=prompt,
+                session_id=session_id,
+                conversation=conversation,
                 user_agent=user_agent,
                 x_forwarded_for=x_forwarded_for,
-            )
-            request_model = AdRequest.from_values(
-                prompt=prompt,
-                conversation=conversation,
-                metadata=metadata,
                 constraints=constraints,
                 wrapping_type=wrapping_type,
             )
-            payload = request_model.to_payload()
+
             logger.debug(
                 "Sending ad enhancement request (with fallback)",
-                extra={"prompt_length": len(request_model.prompt)},
+                extra={"prompt_length": len(prompt)},
             )
 
             response = self._send_request(payload)
@@ -197,85 +243,56 @@ class Adstract:
         self,
         *,
         prompt: str,
-        conversation: dict[str, Any] | Conversation,
+        session_id: str | None = None,
+        conversation: dict[str, Any] | Conversation | None = None,
         user_agent: str,
         x_forwarded_for: str,
         constraints: dict[str, Any] | Constraints | None = None,
         wrapping_type: Literal["xml", "plain"] | None = None,
     ) -> str:
-        if not user_agent:
-            raise MissingParameterError("user_agent parameter is required")
-        if not x_forwarded_for:
-            raise MissingParameterError("x_forwarded_for parameter is required")
-
-        metadata = self._build_metadata(
+        payload = self._build_ad_request(
+            prompt=prompt,
+            session_id=session_id,
+            conversation=conversation,
             user_agent=user_agent,
             x_forwarded_for=x_forwarded_for,
-        )
-        request_model = AdRequest.from_values(
-            prompt=prompt,
-            conversation=conversation,
-            metadata=metadata,
             constraints=constraints,
             wrapping_type=wrapping_type,
         )
-        payload = request_model.to_payload()
+
         logger.debug(
             "Sending async ad enhancement request",
-            extra={"prompt_length": len(request_model.prompt)},
+            extra={"prompt_length": len(prompt)},
         )
 
         response = await self._send_request_async(payload)
-
-        # Check if enhancement was successful
-        if not response.success:
-            raise AdEnhancementError(
-                "Ad enhancement failed",
-                status_code=None,
-                response_snippet=f"success: {response.success}",
-            )
-
-        # Check if aepi data is available
-        if response.aepi is None or response.aepi.aepi_text is None:
-            raise AdEnhancementError(
-                "Ad enhancement response missing aepi data",
-                status_code=None,
-                response_snippet="aepi or aepi_text is None",
-            )
-
-        return response.aepi.aepi_text
+        return self._validate_enhancement_response(response)
 
     async def request_ad_enhancement_or_default_async(
         self,
         *,
         prompt: str,
-        conversation: dict[str, Any] | Conversation,
+        session_id: str | None = None,
+        conversation: dict[str, Any] | Conversation | None = None,
         user_agent: str,
         x_forwarded_for: str,
         constraints: dict[str, Any] | Constraints | None = None,
         wrapping_type: Literal["xml", "plain"] | None = None,
     ) -> str:
-        if not user_agent:
-            raise MissingParameterError("user_agent parameter is required")
-        if not x_forwarded_for:
-            raise MissingParameterError("x_forwarded_for parameter is required")
-
         try:
-            metadata = self._build_metadata(
+            payload = self._build_ad_request(
+                prompt=prompt,
+                session_id=session_id,
+                conversation=conversation,
                 user_agent=user_agent,
                 x_forwarded_for=x_forwarded_for,
-            )
-            request_model = AdRequest.from_values(
-                prompt=prompt,
-                conversation=conversation,
-                metadata=metadata,
                 constraints=constraints,
                 wrapping_type=wrapping_type,
             )
-            payload = request_model.to_payload()
+
             logger.debug(
                 "Sending async ad enhancement request (with fallback)",
-                extra={"prompt_length": len(request_model.prompt)},
+                extra={"prompt_length": len(prompt)},
             )
 
             response = await self._send_request_async(payload)
