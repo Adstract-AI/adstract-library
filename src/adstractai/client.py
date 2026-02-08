@@ -88,6 +88,23 @@ class Adstract:
         async_http_client: Optional[httpx.AsyncClient] = None,
         wrapping_type: Optional[Literal["xml", "plain"]] = None,
     ) -> None:
+        """
+        Initialize the Adstract client.
+
+        Args:
+            api_key: API key for authentication. If None, will try to get from ADSTRACT_API_KEY env var.
+            base_url: Base URL for the API. Defaults to https://api.adstract.ai
+            timeout: Request timeout in seconds. Defaults to 100.
+            retries: Number of retry attempts. Defaults to 0.
+            backoff_factor: Backoff factor for retries. Defaults to 0.5.
+            max_backoff: Maximum backoff time in seconds. Defaults to 8.0.
+            http_client: Custom HTTP client instance. If None, creates a new one.
+            async_http_client: Custom async HTTP client instance. If None, creates a new one.
+            wrapping_type: Type of ad wrapping ("xml" or "plain"). Defaults to "xml".
+
+        Raises:
+            ValidationError: If API key is invalid or wrapping_type is not supported.
+        """
         if api_key is None:
             api_key = os.environ.get(ENV_API_KEY_NAME)
         if not isinstance(api_key, str) or len(api_key.strip()) < MIN_API_KEY_LENGTH:
@@ -110,15 +127,26 @@ class Adstract:
         self._owns_async_client = async_http_client is None
 
     def close(self) -> None:
+        """Close the HTTP client connection if owned by this instance."""
         if self._owns_client:
             self._client.close()
 
     async def aclose(self) -> None:
+        """Close the async HTTP client connection if owned by this instance."""
         if self._owns_async_client:
             await self._async_client.aclose()
 
     def _validate_required_params(self, user_agent: str, x_forwarded_for: str) -> None:
-        """Validate required parameters for ad requests."""
+        """
+        Validate required parameters for ad requests.
+
+        Args:
+            user_agent: User agent string from the client
+            x_forwarded_for: X-Forwarded-For header value
+
+        Raises:
+            MissingParameterError: If any required parameter is missing or empty
+        """
         if not user_agent:
             raise MissingParameterError("user_agent parameter is required")
         if not x_forwarded_for:
@@ -129,7 +157,19 @@ class Adstract:
         session_id: Optional[str],
         conversation: Optional[Conversation]
     ) -> Conversation:
-        """Resolve conversation object from session_id or conversation parameter."""
+        """
+        Resolve conversation object from session_id or conversation parameter.
+
+        Args:
+            session_id: Session ID string to create conversation from
+            conversation: Existing conversation object to use
+
+        Returns:
+            Conversation: Resolved conversation object
+
+        Raises:
+            MissingParameterError: If both session_id and conversation are None
+        """
         if conversation is not None:
             # Use provided conversation, ignore session_id
             return conversation
@@ -150,7 +190,20 @@ class Adstract:
         prompt: str,
         config: AdRequestConfiguration,
     ) -> dict[str, Any]:
-        """Build the complete ad request payload."""
+        """
+        Build the complete ad request payload.
+
+        Args:
+            prompt: The user's prompt text
+            config: Configuration containing user_agent, x_forwarded_for, etc.
+
+        Returns:
+            dict: Complete request payload ready to send to API
+
+        Raises:
+            MissingParameterError: If required parameters are missing
+            ValidationError: If metadata cannot be built
+        """
         self._validate_required_params(config.user_agent, config.x_forwarded_for)
         conversation_obj = self._resolve_conversation(config.session_id, config.conversation)
 
@@ -175,7 +228,19 @@ class Adstract:
         success: bool,
         error: Optional[Exception] = None,
     ) -> EnhancementResult:
-        """Build an EnhancementResult object."""
+        """
+        Build an EnhancementResult object from ad request components.
+
+        Args:
+            prompt: The enhanced or original prompt text
+            conversation: Conversation object containing session/message info
+            ad_response: Response from the ad API (can be None for error cases)
+            success: Whether the ad enhancement was successful
+            error: Exception that occurred (if any)
+
+        Returns:
+            EnhancementResult: Complete result object with all request information
+        """
         return EnhancementResult(
             prompt=prompt,
             conversation=conversation,
@@ -187,11 +252,30 @@ class Adstract:
     def _extract_session_id_from_conversation(
         self, conversation: Conversation
     ) -> str:
-        """Extract session_id from conversation object."""
+        """
+        Extract session_id from conversation object.
+
+        Args:
+            conversation: Conversation object containing session information
+
+        Returns:
+            str: Session ID from the conversation
+        """
         return conversation.session_id
 
     def _validate_ad_response(self, response: AdResponse) -> str:
-        """Validate and extract aepi_text from ad response."""
+        """
+        Validate and extract aepi_text from ad response.
+
+        Args:
+            response: AdResponse object from the API
+
+        Returns:
+            str: Enhanced prompt text from aepi_text
+
+        Raises:
+            AdEnhancementError: If response is invalid or missing aepi data
+        """
         # Check if ad request was successful
         if not response.success:
             raise AdEnhancementError(
@@ -216,6 +300,22 @@ class Adstract:
         prompt: str,
         config: AdRequestConfiguration,
     ) -> EnhancementResult:
+        """
+        Request ad enhancement for a prompt. Throws exception if enhancement fails.
+
+        Args:
+            prompt: The original prompt text to enhance with ads
+            config: Configuration containing session info, user_agent, etc.
+
+        Returns:
+            EnhancementResult: Result object with enhanced prompt and metadata
+
+        Raises:
+            AdEnhancementError: If ad enhancement fails
+            NetworkError: If network request fails
+            AuthenticationError: If API key is invalid
+            ValidationError: If request parameters are invalid
+        """
         payload = self._build_ad_request(
             prompt=prompt,
             config=config,
@@ -245,6 +345,16 @@ class Adstract:
         prompt: str,
         config: AdRequestConfiguration,
     ) -> EnhancementResult:
+        """
+        Request ad enhancement with fallback to original prompt if enhancement fails.
+
+        Args:
+            prompt: The original prompt text to enhance with ads
+            config: Configuration containing session info, user_agent, etc.
+
+        Returns:
+            EnhancementResult: Result with enhanced prompt on success, original prompt on failure
+        """
         # Resolve the conversation to use in the result
         conversation_obj = self._resolve_conversation(config.session_id, config.conversation)
 
@@ -306,6 +416,22 @@ class Adstract:
         prompt: str,
         config: AdRequestConfiguration,
     ) -> EnhancementResult:
+        """
+        Async version of request_ad. Request ad enhancement for a prompt.
+
+        Args:
+            prompt: The original prompt text to enhance with ads
+            config: Configuration containing session info, user_agent, etc.
+
+        Returns:
+            EnhancementResult: Result object with enhanced prompt and metadata
+
+        Raises:
+            AdEnhancementError: If ad enhancement fails
+            NetworkError: If network request fails
+            AuthenticationError: If API key is invalid
+            ValidationError: If request parameters are invalid
+        """
         payload = self._build_ad_request(
             prompt=prompt,
             config=config,
@@ -336,6 +462,16 @@ class Adstract:
         prompt: str,
         config: AdRequestConfiguration,
     ) -> EnhancementResult:
+        """
+        Async version of request_ad_or_default with fallback to original prompt.
+
+        Args:
+            prompt: The original prompt text to enhance with ads
+            config: Configuration containing session info, user_agent, etc.
+
+        Returns:
+            EnhancementResult: Result with enhanced prompt on success, original prompt on failure
+        """
         # Resolve the conversation to use in the result
         conversation_obj = self._resolve_conversation(config.session_id, config.conversation)
 
@@ -392,9 +528,31 @@ class Adstract:
             )
 
     def _endpoint(self) -> str:
+        """
+        Get the ad injection endpoint URL.
+
+        Returns:
+            str: Complete URL for the ad injection endpoint
+        """
         return f"{self._base_url}{AD_INJECTION_ENDPOINT}"
 
     def _send_request(self, payload: dict[str, Any]) -> AdResponse:
+        """
+        Send HTTP request to the ad injection API with retry logic.
+
+        Args:
+            payload: Request payload to send
+
+        Returns:
+            AdResponse: Parsed response from the API
+
+        Raises:
+            NetworkError: If network request fails after retries
+            RateLimitError: If rate limited after retries
+            ServerError: If server error occurs after retries
+            AuthenticationError: If authentication fails
+            UnexpectedResponseError: If response format is invalid
+        """
         url = self._endpoint()
         headers = self._build_headers()
         for attempt in range(self._retries + 1):
@@ -435,6 +593,22 @@ class Adstract:
         raise AdSDKError("Unhandled retry loop exit")
 
     async def _send_request_async(self, payload: dict[str, Any]) -> AdResponse:
+        """
+        Async version of _send_request. Send HTTP request with retry logic.
+
+        Args:
+            payload: Request payload to send
+
+        Returns:
+            AdResponse: Parsed response from the API
+
+        Raises:
+            NetworkError: If network request fails after retries
+            RateLimitError: If rate limited after retries
+            ServerError: If server error occurs after retries
+            AuthenticationError: If authentication fails
+            UnexpectedResponseError: If response format is invalid
+        """
         url = self._endpoint()
         headers = self._build_headers()
         for attempt in range(self._retries + 1):
@@ -475,6 +649,19 @@ class Adstract:
         raise AdSDKError("Unhandled retry loop exit")
 
     def _handle_response(self, response: httpx.Response) -> AdResponse:
+        """
+        Handle HTTP response and convert to AdResponse object.
+
+        Args:
+            response: Raw HTTP response from the API
+
+        Returns:
+            AdResponse: Parsed and validated AdResponse object
+
+        Raises:
+            AuthenticationError: If authentication failed (401, 403)
+            UnexpectedResponseError: If client error or invalid JSON/structure
+        """
         status = response.status_code
         if status in {401, 403}:
             raise AuthenticationError(
@@ -508,14 +695,32 @@ class Adstract:
             ) from exc
 
     def _sleep_backoff(self, attempt: int) -> None:
+        """
+        Sleep with exponential backoff for retry attempts.
+
+        Args:
+            attempt: Current attempt number (0-based)
+        """
         delay = min(self._backoff_factor * (2**attempt), self._max_backoff)
         time.sleep(delay)
 
     async def _sleep_backoff_async(self, attempt: int) -> None:
+        """
+        Async version of _sleep_backoff. Sleep with exponential backoff for retry attempts.
+
+        Args:
+            attempt: Current attempt number (0-based)
+        """
         delay = min(self._backoff_factor * (2**attempt), self._max_backoff)
         await asyncio.sleep(delay)
 
     def _build_headers(self) -> dict[str, str]:
+        """
+        Build HTTP headers for API requests.
+
+        Returns:
+            dict: Dictionary of headers including SDK info and API key
+        """
         return {
             SDK_HEADER_NAME: SDK_NAME,
             SDK_VERSION_HEADER_NAME: SDK_VERSION,
@@ -528,6 +733,19 @@ class Adstract:
         user_agent: str,
         x_forwarded_for: str,
     ) -> Metadata:
+        """
+        Build metadata object for API requests.
+
+        Args:
+            user_agent: User agent string from the client
+            x_forwarded_for: X-Forwarded-For header value
+
+        Returns:
+            Metadata: Metadata object containing client information
+
+        Raises:
+            ValidationError: If user_agent is invalid or metadata cannot be built
+        """
         if len(user_agent) < MIN_USER_AGENT_LENGTH:
             raise ValidationError("user_agent is invalid")
 
@@ -544,8 +762,23 @@ class Adstract:
         enhancement_result: EnhancementResult,
         llm_response: str
     ) -> Analytics:
-        """Build analytics data from enhancement result and LLM response."""
+        """
+        Build analytics data from enhancement result and LLM response.
 
+        Analyzes the LLM response to extract ad-related metrics including:
+        - Total ads detected (based on tracking_identifier count)
+        - Word count analysis and ad word ratio
+        - Sponsored label counting
+        - Ad placement position analysis
+        - Overload detection
+
+        Args:
+            enhancement_result: Result from the ad enhancement request
+            llm_response: The actual response text from the LLM
+
+        Returns:
+            Analytics: Complete analytics data for the ad acknowledgment
+        """
         # Determine wrapping tags based on wrapping_type
         if self._wrapping_type == "xml":
             tag_name = XML_TAG
@@ -636,8 +869,21 @@ class Adstract:
         tag_name: str,
         enhancement_result: EnhancementResult
     ) -> str:
-        """Calculate where the ad is positioned in the response."""
+        """
+        Calculate where the ad is positioned in the response.
 
+        Analyzes the position of the first ad block within the LLM response
+        and categorizes it as "top", "middle", "bottom", "none", or "unknown".
+
+        Args:
+            llm_response: The full LLM response text
+            ad_content_blocks: List of extracted ad content blocks
+            tag_name: The tag name used for wrapping (XML_TAG or PLAIN_TAG)
+            enhancement_result: Result containing sponsored_label for plain text analysis
+
+        Returns:
+            str: Position category ("top", "middle", "bottom", "none", "unknown")
+        """
         if not ad_content_blocks:
             return "none"
 
@@ -679,9 +925,20 @@ class Adstract:
         Analyze the LLM response and report ad acknowledgment to the backend.
         Only reports if the enhancement was successful (ad was injected).
 
+        Performs comprehensive analytics on the LLM response including:
+        - Ad detection and counting
+        - Word ratio analysis
+        - Placement position calculation
+        - Compliance checking
+        - Error tracking
+
         Args:
             enhancement_result: The EnhancementResult from the ad request
             llm_response: The actual response from the LLM
+
+        Note:
+            This method never raises exceptions. Errors are logged and reported
+            to the backend with appropriate error tracking information.
         """
         # Only analyze and report if enhancement was successful (ad was injected)
         if not enhancement_result.success:
@@ -717,9 +974,16 @@ class Adstract:
         Async version of analyze and report ad acknowledgment to the backend.
         Only reports if the enhancement was successful (ad was injected).
 
+        Performs the same comprehensive analytics as analyse_and_report but
+        uses async HTTP requests for better concurrency.
+
         Args:
             enhancement_result: The EnhancementResult from the ad request
             llm_response: The actual response from the LLM
+
+        Note:
+            This method never raises exceptions. Errors are logged and reported
+            to the backend with appropriate error tracking information.
         """
         # Only analyze and report if enhancement was successful (ad was injected)
         if not enhancement_result.success:
@@ -751,8 +1015,20 @@ class Adstract:
         llm_response: str,
         error: Optional[Exception] = None
     ) -> AdAck:
-        """Build AdAck payload from enhancement result and LLM response."""
+        """
+        Build AdAck payload from enhancement result and LLM response.
 
+        Creates a complete ad acknowledgment payload including analytics, diagnostics,
+        compliance checks, external metadata, and error tracking.
+
+        Args:
+            enhancement_result: Result from the ad enhancement request
+            llm_response: The actual response text from the LLM
+            error: Exception that occurred during processing (if any)
+
+        Returns:
+            AdAck: Complete ad acknowledgment payload ready for backend
+        """
         # Get ad_response_id from the enhancement result
         ad_response_id = enhancement_result.ad_response.ad_response_id
         execution_time_ms = enhancement_result.ad_response.execution_time_ms
@@ -819,23 +1095,75 @@ class Adstract:
         llm_response: str,
         error: Exception
     ) -> AdAck:
-        """Build AdAck payload for error cases."""
+        """
+        Build AdAck payload for error cases.
+
+        Creates an ad acknowledgment payload specifically for error scenarios,
+        ensuring that error tracking information is properly included.
+
+        Args:
+            enhancement_result: Result from the ad enhancement request
+            llm_response: The actual response text from the LLM
+            error: Exception that occurred during processing
+
+        Returns:
+            AdAck: Ad acknowledgment payload with error tracking
+        """
         return self._build_ad_ack(enhancement_result, llm_response, error)
 
     def _hash_response(self, response: str) -> str:
+        """
+        Generate SHA256 hash of the response.
+
+        Creates a unique hash of the LLM response for tracking and verification purposes.
+
+        Args:
+            response: The LLM response text to hash
+
+        Returns:
+            str: SHA256 hash of the response as hexadecimal string
+        """
         """Generate hash of the response."""
         return hashlib.sha256(response.encode('utf-8')).hexdigest()
 
     def _calculate_checksum(self, text: str) -> str:
+        """
+        Calculate MD5 checksum of the aepi text.
+
+        Creates a checksum of the enhanced prompt text for integrity verification.
+
+        Args:
+            text: The aepi text to calculate checksum for
+
+        Returns:
+            str: MD5 checksum as hexadecimal string
+        """
         """Calculate checksum of the aepi text."""
         return hashlib.md5(text.encode('utf-8')).hexdigest()
 
     def _ad_ack_endpoint(self) -> str:
+        """
+        Get the ad acknowledgment endpoint URL.
+
+        Constructs the complete URL for sending ad acknowledgment data to the backend.
+
+        Returns:
+            str: Complete URL for the ad acknowledgment endpoint
+        """
         """Get the ad acknowledgment endpoint URL."""
         return f"{self._base_url}{AD_ACK_ENDPOINT}"
 
     def _send_ad_ack(self, ad_ack: AdAck) -> None:
-        """Send AdAck payload to the backend."""
+        """
+        Send AdAck payload to the backend synchronously.
+
+        Sends the ad acknowledgment data to the backend API. This method logs
+        warnings for failed requests but does not raise exceptions to ensure
+        that ad acknowledgment failures don't disrupt the main application flow.
+
+        Args:
+            ad_ack: Complete ad acknowledgment payload to send
+        """
         url = self._ad_ack_endpoint()
         headers = self._build_headers()
         payload = ad_ack.model_dump(exclude_none=True)
@@ -859,7 +1187,16 @@ class Adstract:
             logger.error("Failed to send ad acknowledgment", exc_info=exc)
 
     async def _send_ad_ack_async(self, ad_ack: AdAck) -> None:
-        """Send AdAck payload to the backend asynchronously."""
+        """
+        Send AdAck payload to the backend asynchronously.
+
+        Async version of _send_ad_ack. Sends the ad acknowledgment data to the
+        backend API asynchronously. This method logs warnings for failed requests
+        but does not raise exceptions to ensure reliability.
+
+        Args:
+            ad_ack: Complete ad acknowledgment payload to send
+        """
         url = self._ad_ack_endpoint()
         headers = self._build_headers()
         payload = ad_ack.model_dump()
@@ -884,12 +1221,44 @@ class Adstract:
 
 
 def _snippet(response: httpx.Response, limit: int = 200) -> Optional[str]:
+    """
+    Extract a snippet from HTTP response text for logging purposes.
+
+    Truncates the response text to a specified limit for inclusion in error
+    messages and debug logs without overwhelming the log output.
+
+    Args:
+        response: HTTP response object from httpx
+        limit: Maximum number of characters to include in snippet
+
+    Returns:
+        Optional[str]: Truncated response text or None if no text available
+    """
     if response.text is None:
         return None
     return response.text[:limit]
 
 
 def _build_client_metadata(user_agent: str, x_forwarded_for: str) -> dict[str, Any]:
+    """
+    Build client metadata dictionary from user agent and forwarded IP.
+
+    Parses user agent string to extract browser, OS, and device information,
+    then constructs a metadata dictionary for API requests.
+
+    Args:
+        user_agent: User agent string from the client
+        x_forwarded_for: X-Forwarded-For header value (client IP)
+
+    Returns:
+        dict[str, Any]: Dictionary containing client metadata including:
+            - user_agent_hash: SHA256 hash of user agent
+            - device_type: Device category (desktop, mobile, tablet, bot, unknown)
+            - sdk_version: Current SDK version
+            - x_forwarded_for: Client IP address
+            - os_family: Operating system family (optional)
+            - browser_family: Browser family (optional)
+    """
     user_agent_hash = hashlib.sha256(user_agent.encode("utf-8")).hexdigest()
     os_family = _parse_os_family(user_agent)
     browser_family = _parse_browser_family(user_agent)
@@ -909,6 +1278,22 @@ def _build_client_metadata(user_agent: str, x_forwarded_for: str) -> dict[str, A
 
 
 def _parse_device_type(user_agent: str) -> str:
+    """
+    Parse device type from user agent string.
+
+    Analyzes the user agent string to categorize the device type.
+
+    Args:
+        user_agent: User agent string to parse
+
+    Returns:
+        str: Device type category:
+            - "bot": Web crawlers, bots, spiders
+            - "tablet": Tablets, iPads
+            - "mobile": Mobile phones, smartphones
+            - "desktop": Desktop computers, laptops
+            - "unknown": Unrecognized device type
+    """
     value = user_agent.lower()
     if any(token in value for token in ["bot", "crawler", "spider", "slurp", "bingpreview"]):
         return "bot"
@@ -922,6 +1307,25 @@ def _parse_device_type(user_agent: str) -> str:
 
 
 def _parse_os_family(user_agent: str) -> Optional[str]:
+    """
+    Parse operating system family from user agent string.
+
+    Extracts the operating system information from the user agent string
+    by matching against known OS identifiers.
+
+    Args:
+        user_agent: User agent string to parse
+
+    Returns:
+        Optional[str]: Operating system family:
+            - "Windows": Microsoft Windows
+            - "Android": Android mobile OS
+            - "iOS": Apple iOS (iPhone/iPad)
+            - "macOS": Apple macOS
+            - "ChromeOS": Google Chrome OS
+            - "Linux": Linux distributions
+            - None: Unrecognized or no OS information
+    """
     value = user_agent.lower()
     candidates = (
         ("windows", "Windows"),
@@ -941,6 +1345,25 @@ def _parse_os_family(user_agent: str) -> Optional[str]:
 
 
 def _parse_browser_family(user_agent: str) -> Optional[str]:
+    """
+    Parse browser family from user agent string.
+
+    Identifies the browser type from the user agent string by matching
+    against known browser identifiers in order of specificity.
+
+    Args:
+        user_agent: User agent string to parse
+
+    Returns:
+        Optional[str]: Browser family:
+            - "Edge": Microsoft Edge
+            - "Opera": Opera browser
+            - "Chrome": Google Chrome
+            - "Safari": Apple Safari
+            - "Firefox": Mozilla Firefox
+            - "Chromium": Chromium-based browsers
+            - None: Unrecognized or no browser information
+    """
     value = user_agent.lower()
     if "edg" in value:
         result = "Edge"
@@ -960,6 +1383,16 @@ def _parse_browser_family(user_agent: str) -> Optional[str]:
 
 
 def _sdk_version() -> str:
+    """
+    Get the current SDK version from package metadata.
+
+    Attempts to retrieve the installed version of the adstractai package
+    using importlib metadata. Falls back to "0.0.0" if the package
+    metadata is not available (e.g., during development).
+
+    Returns:
+        str: Version string (e.g., "1.2.3") or "0.0.0" if not found
+    """
     try:
         return importlib_metadata.version("adstractai")
     except importlib_metadata.PackageNotFoundError:
