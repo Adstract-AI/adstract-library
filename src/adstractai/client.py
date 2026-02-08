@@ -36,7 +36,6 @@ from adstractai.constants import (
     SDK_VERSION_HEADER_NAME, DEFAULT_TRUE_VALUE, SDK_TYPE,
 )
 from adstractai.errors import (
-    AdEnhancementError,
     AdSDKError,
     AuthenticationError,
     MissingParameterError,
@@ -76,17 +75,17 @@ class Adstract:
     """Client for sending ad requests to the Adstract backend."""
 
     def __init__(
-        self,
-        *,
-        api_key: Optional[str] = None,
-        base_url: Optional[str] = None,
-        timeout: float = DEFAULT_TIMEOUT_SECONDS,
-        retries: int = DEFAULT_RETRIES,
-        backoff_factor: float = 0.5,
-        max_backoff: float = 8.0,
-        http_client: Optional[httpx.Client] = None,
-        async_http_client: Optional[httpx.AsyncClient] = None,
-        wrapping_type: Optional[Literal["xml", "plain"]] = None,
+            self,
+            *,
+            api_key: Optional[str] = None,
+            base_url: Optional[str] = None,
+            timeout: float = DEFAULT_TIMEOUT_SECONDS,
+            retries: int = DEFAULT_RETRIES,
+            backoff_factor: float = 0.5,
+            max_backoff: float = 8.0,
+            http_client: Optional[httpx.Client] = None,
+            async_http_client: Optional[httpx.AsyncClient] = None,
+            wrapping_type: Optional[Literal["xml", "plain"]] = None,
     ) -> None:
         """
         Initialize the Adstract client.
@@ -153,9 +152,9 @@ class Adstract:
             raise MissingParameterError("x_forwarded_for parameter is required")
 
     def _resolve_conversation(
-        self,
-        session_id: Optional[str],
-        conversation: Optional[Conversation]
+            self,
+            session_id: Optional[str],
+            conversation: Optional[Conversation]
     ) -> Conversation:
         """
         Resolve conversation object from session_id or conversation parameter.
@@ -185,10 +184,10 @@ class Adstract:
             raise MissingParameterError("Either session_id or conversation parameter is required")
 
     def _build_ad_request(
-        self,
-        *,
-        prompt: str,
-        config: AdRequestConfiguration,
+            self,
+            *,
+            prompt: str,
+            config: AdRequestConfiguration,
     ) -> dict[str, Any]:
         """
         Build the complete ad request payload.
@@ -220,13 +219,13 @@ class Adstract:
         return request_model.to_payload()
 
     def _build_ad_enchancment_result(
-        self,
-        *,
-        prompt: str,
-        conversation: Conversation,
-        ad_response: Optional[AdResponse],
-        success: bool,
-        error: Optional[Exception] = None,
+            self,
+            *,
+            prompt: str,
+            conversation: Conversation,
+            ad_response: Optional[AdResponse],
+            success: bool,
+            error: Optional[Exception] = None,
     ) -> EnhancementResult:
         """
         Build an EnhancementResult object from ad request components.
@@ -249,101 +248,11 @@ class Adstract:
             error=error,
         )
 
-    def _extract_session_id_from_conversation(
-        self, conversation: Conversation
-    ) -> str:
-        """
-        Extract session_id from conversation object.
-
-        Args:
-            conversation: Conversation object containing session information
-
-        Returns:
-            str: Session ID from the conversation
-        """
-        return conversation.session_id
-
-    def _validate_ad_response(self, response: AdResponse) -> str:
-        """
-        Validate and extract aepi_text from ad response.
-
-        Args:
-            response: AdResponse object from the API
-
-        Returns:
-            str: Enhanced prompt text from aepi_text
-
-        Raises:
-            AdEnhancementError: If response is invalid or missing aepi data
-        """
-        # Check if ad request was successful
-        if not response.success:
-            raise AdEnhancementError(
-                "Ad request failed",
-                status_code=None,
-                response_snippet=f"success: {response.success}",
-            )
-
-        # Check if aepi data is available
-        if response.aepi is None or response.aepi.aepi_text is None:
-            raise AdEnhancementError(
-                "Ad response missing aepi data",
-                status_code=None,
-                response_snippet="aepi or aepi_text is None",
-            )
-
-        return response.aepi.aepi_text
-
-    def request_ad(
-        self,
-        *,
-        prompt: str,
-        config: AdRequestConfiguration,
-    ) -> EnhancementResult:
-        """
-        Request ad enhancement for a prompt. Throws exception if enhancement fails.
-
-        Args:
-            prompt: The original prompt text to enhance with ads
-            config: Configuration containing session info, user_agent, etc.
-
-        Returns:
-            EnhancementResult: Result object with enhanced prompt and metadata
-
-        Raises:
-            AdEnhancementError: If ad enhancement fails
-            NetworkError: If network request fails
-            AuthenticationError: If API key is invalid
-            ValidationError: If request parameters are invalid
-        """
-        payload = self._build_ad_request(
-            prompt=prompt,
-            config=config,
-        )
-
-        # Resolve the conversation to use in the result
-        conversation_obj = self._resolve_conversation(config.session_id, config.conversation)
-
-        logger.debug(
-            "Sending ad request", extra={"prompt_length": len(prompt)}
-        )
-
-        response = self._send_request(payload)
-        enhanced_prompt = self._validate_ad_response(response)
-
-        return self._build_ad_enchancment_result(
-            prompt=enhanced_prompt,
-            conversation=conversation_obj,
-            ad_response=response,
-            success=True,
-            error=None,
-        )
-
     def request_ad_or_default(
-        self,
-        *,
-        prompt: str,
-        config: AdRequestConfiguration,
+            self,
+            *,
+            prompt: str,
+            config: AdRequestConfiguration,
     ) -> EnhancementResult:
         """
         Request ad enhancement with fallback to original prompt if enhancement fails.
@@ -373,7 +282,7 @@ class Adstract:
 
             # Check if ad request was successful and has aepi data
             if (
-                response.success
+                    response.success
             ):
                 return self._build_ad_enchancment_result(
                     prompt=response.aepi.aepi_text,
@@ -410,57 +319,11 @@ class Adstract:
                 error=exc,
             )
 
-    async def request_ad_async(
-        self,
-        *,
-        prompt: str,
-        config: AdRequestConfiguration,
-    ) -> EnhancementResult:
-        """
-        Async version of request_ad. Request ad enhancement for a prompt.
-
-        Args:
-            prompt: The original prompt text to enhance with ads
-            config: Configuration containing session info, user_agent, etc.
-
-        Returns:
-            EnhancementResult: Result object with enhanced prompt and metadata
-
-        Raises:
-            AdEnhancementError: If ad enhancement fails
-            NetworkError: If network request fails
-            AuthenticationError: If API key is invalid
-            ValidationError: If request parameters are invalid
-        """
-        payload = self._build_ad_request(
-            prompt=prompt,
-            config=config,
-        )
-
-        # Resolve the conversation to use in the result
-        conversation_obj = self._resolve_conversation(config.session_id, config.conversation)
-
-        logger.debug(
-            "Sending async ad request",
-            extra={"prompt_length": len(prompt)},
-        )
-
-        response = await self._send_request_async(payload)
-        enhanced_prompt = self._validate_ad_response(response)
-
-        return self._build_ad_enchancment_result(
-            prompt=enhanced_prompt,
-            conversation=conversation_obj,
-            ad_response=response,
-            success=True,
-            error=None,
-        )
-
     async def request_ad_or_default_async(
-        self,
-        *,
-        prompt: str,
-        config: AdRequestConfiguration,
+            self,
+            *,
+            prompt: str,
+            config: AdRequestConfiguration,
     ) -> EnhancementResult:
         """
         Async version of request_ad_or_default with fallback to original prompt.
@@ -490,7 +353,7 @@ class Adstract:
 
             # Check if ad request was successful and has aepi data
             if (
-                response.success
+                    response.success
             ):
                 return self._build_ad_enchancment_result(
                     prompt=response.aepi.aepi_text,
@@ -701,7 +564,7 @@ class Adstract:
         Args:
             attempt: Current attempt number (0-based)
         """
-        delay = min(self._backoff_factor * (2**attempt), self._max_backoff)
+        delay = min(self._backoff_factor * (2 ** attempt), self._max_backoff)
         time.sleep(delay)
 
     async def _sleep_backoff_async(self, attempt: int) -> None:
@@ -711,7 +574,7 @@ class Adstract:
         Args:
             attempt: Current attempt number (0-based)
         """
-        delay = min(self._backoff_factor * (2**attempt), self._max_backoff)
+        delay = min(self._backoff_factor * (2 ** attempt), self._max_backoff)
         await asyncio.sleep(delay)
 
     def _build_headers(self) -> dict[str, str]:
@@ -728,10 +591,10 @@ class Adstract:
         }
 
     def _build_metadata(
-        self,
-        *,
-        user_agent: str,
-        x_forwarded_for: str,
+            self,
+            *,
+            user_agent: str,
+            x_forwarded_for: str,
     ) -> Metadata:
         """
         Build metadata object for API requests.
@@ -758,9 +621,9 @@ class Adstract:
             raise ValidationError("Failed to build metadata") from exc
 
     def _build_analytics(
-        self,
-        enhancement_result: EnhancementResult,
-        llm_response: str
+            self,
+            enhancement_result: EnhancementResult,
+            llm_response: str
     ) -> Analytics:
         """
         Build analytics data from enhancement result and LLM response.
@@ -798,7 +661,6 @@ class Adstract:
             # Pattern: from sponsored_label to DEFAULT_PLAIN_TAG
             pattern = rf'{re.escape(sponsored_label)}(.*?){re.escape(tag_name)}'
             ad_content_blocks = re.findall(pattern, llm_response, re.DOTALL | re.IGNORECASE)
-
 
         # Calculate total_ads_detected by counting tracking_identifier occurrences in ad blocks
         total_ads_detected = 0
@@ -863,11 +725,11 @@ class Adstract:
         )
 
     def _calculate_placement_position(
-        self,
-        llm_response: str,
-        ad_content_blocks: list[str],
-        tag_name: str,
-        enhancement_result: EnhancementResult
+            self,
+            llm_response: str,
+            ad_content_blocks: list[str],
+            tag_name: str,
+            enhancement_result: EnhancementResult
     ) -> str:
         """
         Calculate where the ad is positioned in the response.
@@ -916,10 +778,10 @@ class Adstract:
             return "bottom"
 
     def analyse_and_report(
-        self,
-        *,
-        enhancement_result: EnhancementResult,
-        llm_response: str,
+            self,
+            *,
+            enhancement_result: EnhancementResult,
+            llm_response: str,
     ) -> None:
         """
         Analyze the LLM response and report ad acknowledgment to the backend.
@@ -965,10 +827,10 @@ class Adstract:
                 logger.error("Failed to send error ad acknowledgment", exc_info=inner_exc)
 
     async def analyse_and_report_async(
-        self,
-        *,
-        enhancement_result: EnhancementResult,
-        llm_response: str,
+            self,
+            *,
+            enhancement_result: EnhancementResult,
+            llm_response: str,
     ) -> None:
         """
         Async version of analyze and report ad acknowledgment to the backend.
@@ -1010,10 +872,10 @@ class Adstract:
                 logger.error("Failed to send error ad acknowledgment", exc_info=inner_exc)
 
     def _build_ad_ack(
-        self,
-        enhancement_result: EnhancementResult,
-        llm_response: str,
-        error: Optional[Exception] = None
+            self,
+            enhancement_result: EnhancementResult,
+            llm_response: str,
+            error: Optional[Exception] = None
     ) -> AdAck:
         """
         Build AdAck payload from enhancement result and LLM response.
@@ -1090,10 +952,10 @@ class Adstract:
         )
 
     def _build_error_ad_ack(
-        self,
-        enhancement_result: EnhancementResult,
-        llm_response: str,
-        error: Exception
+            self,
+            enhancement_result: EnhancementResult,
+            llm_response: str,
+            error: Exception
     ) -> AdAck:
         """
         Build AdAck payload for error cases.
