@@ -255,14 +255,31 @@ class Adstract:
             config: AdRequestConfiguration,
     ) -> EnhancementResult:
         """
-        Request ad enhancement with fallback to original prompt if enhancement fails.
+        Request ad enhancement with graceful fallback to original prompt.
+
+        This method attempts to enhance the provided prompt with relevant advertisements.
+        If the enhancement fails for any reason (network issues, API errors, etc.),
+        it gracefully falls back to returning the original prompt unchanged.
 
         Args:
-            prompt: The original prompt text to enhance with ads
-            config: Configuration containing session info, user_agent, etc.
+            prompt: The original text prompt to enhance with advertisements
+            config: Configuration object containing:
+                - session_id OR conversation: Session/conversation context (required)
+                - user_agent: Browser user agent string (required)
+                - x_forwarded_for: Client IP address (required)
 
         Returns:
-            EnhancementResult: Result with enhanced prompt on success, original prompt on failure
+            EnhancementResult: Result object containing:
+                - prompt: Enhanced text with ads (success) or original text (failure)
+                - conversation: Full conversation context with IDs
+                - ad_response: API response object (None for network failures)
+                - success: True if enhancement succeeded, False if using fallback
+                - error: Exception details if fallback was triggered (None on success)
+
+        Note:
+            This method never raises exceptions. All errors are captured in the
+            returned EnhancementResult.error field and logged appropriately.
+            Use this method when you want guaranteed response without error handling.
         """
         # Resolve the conversation to use in the result
         conversation_obj = self._resolve_conversation(config.session_id, config.conversation)
@@ -326,14 +343,35 @@ class Adstract:
             config: AdRequestConfiguration,
     ) -> EnhancementResult:
         """
-        Async version of request_ad_or_default with fallback to original prompt.
+        Asynchronously request ad enhancement with graceful fallback to original prompt.
+
+        Async version of request_ad_or_default(). This method attempts to enhance the
+        provided prompt with relevant advertisements using async HTTP requests for
+        better concurrency in async applications.
+
+        If the enhancement fails for any reason (network issues, API errors, etc.),
+        it gracefully falls back to returning the original prompt unchanged.
 
         Args:
-            prompt: The original prompt text to enhance with ads
-            config: Configuration containing session info, user_agent, etc.
+            prompt: The original text prompt to enhance with advertisements
+            config: Configuration object containing:
+                - session_id OR conversation: Session/conversation context (required)
+                - user_agent: Browser user agent string (required)
+                - x_forwarded_for: Client IP address (required)
 
         Returns:
-            EnhancementResult: Result with enhanced prompt on success, original prompt on failure
+            EnhancementResult: Result object containing:
+                - prompt: Enhanced text with ads (success) or original text (failure)
+                - conversation: Full conversation context with IDs
+                - ad_response: API response object (None for network failures)
+                - success: True if enhancement succeeded, False if using fallback
+                - error: Exception details if fallback was triggered (None on success)
+
+        Note:
+            This method never raises exceptions. All errors are captured in the
+            returned EnhancementResult.error field and logged appropriately.
+            Use this method in async contexts when you want guaranteed response
+            without error handling.
         """
         # Resolve the conversation to use in the result
         conversation_obj = self._resolve_conversation(config.session_id, config.conversation)
@@ -985,7 +1023,6 @@ class Adstract:
         Returns:
             str: SHA256 hash of the response as hexadecimal string
         """
-        """Generate hash of the response."""
         return hashlib.sha256(response.encode('utf-8')).hexdigest()
 
     def _calculate_checksum(self, text: str) -> str:
