@@ -2,11 +2,18 @@
 
 ## Supported Versions
 
-Security updates are provided for the latest minor release.
+We provide security updates for the latest minor release only. Users should upgrade to the most recent minor version to receive fixes.
 
 ## Reporting a Vulnerability
 
-If you believe you have found a security vulnerability, please email the team at
-andrea.stevanoska2@gmail.com with details. Do not open a public issue.
+Please report suspected security vulnerabilities privately.
 
-We will acknowledge receipt within 72 hours and provide a timeline for a fix.
+Email: support@adstract.ai
+
+Include the following details to help us investigate quickly:
+- A clear description of the issue and its impact
+- Steps to reproduce (proof-of-concept if available)
+- Affected versions and environment details
+
+Do not open a public issue or disclose the vulnerability until we confirm a fix is available.
+We will acknowledge receipt within 72 hours and provide a remediation timeline.

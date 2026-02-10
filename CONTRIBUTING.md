@@ -1,37 +1,27 @@
 # Contributing
 
-Thanks for taking the time to contribute to Adstract AI.
+Thank you for your interest in the Adstract SDK.
 
-## Development workflow
+Official documentation:
+https://adstract-ai.github.io/adstract-documentation/
 
-1. Fork the repository and create a feature branch.
-2. Create a virtual environment and install dev dependencies:
+## Project Ownership
+This SDK is the exclusive property of Adstract AI.
 
-   ```bash
-   python -m venv .venv
-   source .venv/bin/activate
-   python -m pip install -e ".[dev]"
-   pre-commit install
-   ```
+## Official Changes Policy
+Adstract AI does not accept external code contributions for official releases.
+This includes pull requests, patches, and direct change requests.
 
-3. Run checks before opening a pull request:
+## Forks
+You are welcome to fork this repository. However:
+- your fork is unofficial and independent;
+- Adstract AI is not responsible or accountable for your fork or its behavior;
+- you must not represent your fork as an official Adstract SDK release; and
+- you must not imply Adstract AI endorsement or support.
 
-   ```bash
-   ruff format .
-   ruff check .
-   pyright
-   pytest
-   ```
+## Bug Reports and Requests
+You may still open issues for bug reports or feature requests. Adstract AI may
+review them at its discretion, with no obligation to implement or respond.
 
-4. If you add new behavior, update or add tests in `tests`.
-5. Open a pull request with a clear description of the changes.
-
-## Local tips
-
-- Use `ruff format --check .` in CI-like runs.
-- Ensure `ADSTRACT_API_KEY` is set for any manual API tests.
-- Keep examples in `README.md` aligned with the public API.
-
-## Reporting issues
-
-Use the GitHub issue tracker and include clear reproduction steps.
+## Security
+If you discover a security issue, follow the process in `SECURITY.md`.
