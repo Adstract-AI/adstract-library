@@ -42,11 +42,7 @@ X_FORWARDED_FOR = "185.100.245.160"
 
 def _valid_config(user_agent: str = DEFAULT_USER_AGENT) -> AdRequestConfiguration:
     return AdRequestConfiguration(
-        conversation=Conversation(
-            conversation_id="conv-1",
-            session_id="sess-1",
-            message_id="msg-1",
-        ),
+        session_id="sess-1",
         user_agent=user_agent,
         x_forwarded_for=X_FORWARDED_FOR,
     )
@@ -366,11 +362,7 @@ def test_missing_user_agent_returns_error_in_result() -> None:
     client = Adstract(api_key=API_KEY)
 
     config = AdRequestConfiguration(
-        conversation=Conversation(
-            conversation_id="c",
-            session_id="s",
-            message_id="m",
-        ),
+        session_id="s",
         user_agent="",  # Empty string should trigger the error
         x_forwarded_for=X_FORWARDED_FOR,
     )
@@ -386,11 +378,7 @@ def test_missing_x_forwarded_for_returns_error_in_result() -> None:
     client = Adstract(api_key=API_KEY)
 
     config = AdRequestConfiguration(
-        conversation=Conversation(
-            conversation_id="c",
-            session_id="s",
-            message_id="m",
-        ),
+        session_id="s",
         user_agent=DEFAULT_USER_AGENT,
         x_forwarded_for="",  # Empty string should trigger the error
     )
@@ -406,11 +394,7 @@ def test_missing_parameters_in_or_default_method() -> None:
     client = Adstract(api_key=API_KEY)
 
     config_missing_user_agent = AdRequestConfiguration(
-        conversation=Conversation(
-            conversation_id="c",
-            session_id="s",
-            message_id="m",
-        ),
+        session_id="s",
         user_agent="",
         x_forwarded_for=X_FORWARDED_FOR,
     )
@@ -421,11 +405,7 @@ def test_missing_parameters_in_or_default_method() -> None:
     assert "user_agent parameter is required" in str(result.error)
 
     config_missing_x_forwarded_for = AdRequestConfiguration(
-        conversation=Conversation(
-            conversation_id="c",
-            session_id="s",
-            message_id="m",
-        ),
+        session_id="s",
         user_agent=DEFAULT_USER_AGENT,
         x_forwarded_for="",
     )
@@ -443,11 +423,7 @@ def test_missing_parameters_in_async_methods() -> None:
         client = Adstract(api_key=API_KEY)
 
         config_missing_user_agent = AdRequestConfiguration(
-            conversation=Conversation(
-                conversation_id="c",
-                session_id="s",
-                message_id="m",
-            ),
+            session_id="s",
             user_agent="",
             x_forwarded_for=X_FORWARDED_FOR,
         )
@@ -460,11 +436,7 @@ def test_missing_parameters_in_async_methods() -> None:
         assert "user_agent parameter is required" in str(result.error)
 
         config_missing_x_forwarded_for = AdRequestConfiguration(
-            conversation=Conversation(
-                conversation_id="c",
-                session_id="s",
-                message_id="m",
-            ),
+            session_id="s",
             user_agent=DEFAULT_USER_AGENT,
             x_forwarded_for="",
         )
@@ -996,5 +968,4 @@ def test_analyse_and_report_max_ads_policy_violated() -> None:
     compliance = captured["payload"]["compliance"]
     assert analytics["total_ads_detected"] > DEFAULT_MAX_ADS
     assert compliance["max_ads_policy_ok"] is False
-
 

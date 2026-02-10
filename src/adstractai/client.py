@@ -160,31 +160,24 @@ class Adstract:
         if x_forwarded_for == "":
             raise MissingParameterError("x_forwarded_for parameter is required")
 
-    def _resolve_conversation(
-        self, session_id: Optional[str], conversation: Optional[Conversation]
-    ) -> Conversation:
+    def _resolve_conversation(self, session_id: Optional[str]) -> Conversation:
         """
-        Resolve conversation object from session_id or conversation parameter.
+        Resolve conversation object from session_id.
 
         Args:
             session_id: Session ID string to create conversation from
-            conversation: Existing conversation object to use
 
         Returns:
             Conversation: Resolved conversation object
 
         Raises:
-            MissingParameterError: If both session_id and conversation are None
+            MissingParameterError: If session_id is None
         """
-        if conversation is not None:
-            # Use provided conversation, ignore session_id
-            return conversation
-        elif session_id is not None:
-            # Create conversation from session_id
-            msg_timestamp = f"msg_u_{str(int(time.time() * 1000))}"
-            return Conversation(conversation_id=session_id, session_id=session_id, message_id=msg_timestamp)
-        else:
-            raise MissingParameterError("Either session_id or conversation parameter is required")
+        if session_id is None:
+            raise MissingParameterError("session_id parameter is required")
+        # Create conversation from session_id
+        msg_timestamp = f"msg_u_{str(int(time.time() * 1000))}"
+        return Conversation(conversation_id=session_id, session_id=session_id, message_id=msg_timestamp)
 
     def _build_ad_request(
         self,
@@ -207,7 +200,7 @@ class Adstract:
             ValidationError: If metadata cannot be built
         """
         self._validate_required_params(config.user_agent, config.x_forwarded_for)
-        conversation_obj = self._resolve_conversation(config.session_id, config.conversation)
+        conversation_obj = self._resolve_conversation(config.session_id)
 
         metadata = self._build_metadata(
             user_agent=config.user_agent,
@@ -267,7 +260,7 @@ class Adstract:
         Args:
             prompt: The original text prompt to enhance with advertisements
             config: Configuration object containing:
-                - session_id OR conversation: Session/conversation context (required)
+                - session_id: Session/conversation context (required)
                 - user_agent: Browser user agent string (required)
                 - x_forwarded_for: Client IP address (required)
 
@@ -282,10 +275,9 @@ class Adstract:
         Note:
             This method never raises exceptions. All errors are captured in the
             returned EnhancementResult.error field and logged appropriately.
-            Use this method when you want guaranteed response without error handling.
         """
         # Resolve the conversation to use in the result
-        conversation_obj = self._resolve_conversation(config.session_id, config.conversation)
+        conversation_obj = self._resolve_conversation(config.session_id)
 
         try:
             payload = self._build_ad_request(
@@ -349,7 +341,7 @@ class Adstract:
         Args:
             prompt: The original text prompt to enhance with advertisements
             config: Configuration object containing:
-                - session_id OR conversation: Session/conversation context (required)
+                - session_id: Session/conversation context (required)
                 - user_agent: Browser user agent string (required)
                 - x_forwarded_for: Client IP address (required)
 
@@ -364,11 +356,10 @@ class Adstract:
         Note:
             This method never raises exceptions. All errors are captured in the
             returned EnhancementResult.error field and logged appropriately.
-            Use this method in async contexts when you want guaranteed response
-            without error handling.
+            Use this method in async contexts when you want guaranteed response.
         """
         # Resolve the conversation to use in the result
-        conversation_obj = self._resolve_conversation(config.session_id, config.conversation)
+        conversation_obj = self._resolve_conversation(config.session_id)
 
         try:
             payload = self._build_ad_request(

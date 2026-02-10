@@ -276,20 +276,14 @@ class AdRequestConfiguration(BaseModel):
     including session context and client information.
 
     Attributes:
-        session_id: Session identifier for creating conversation context (optional)
-        conversation: Complete conversation object with IDs (optional, takes precedence over session_id)
+        session_id: Session identifier for creating conversation context (required)
         user_agent: User agent string from the client browser/application
         x_forwarded_for: Client IP address for geolocation and analytics
-
-    Note:
-        Either session_id or conversation must be provided. If both are given,
-        the conversation object takes precedence and session_id is ignored.
     """
 
     model_config = ConfigDict(extra="forbid")
 
-    session_id: Optional[str] = None
-    conversation: Optional[Conversation] = None
+    session_id: str
     user_agent: str
     x_forwarded_for: str
 
