@@ -1,67 +1,72 @@
 #!/usr/bin/env python3
-"""Example demonstrating the updated analytics implementation with tracking_identifier counting."""
+"""Example demonstrating integration with Adstract SDK and OpenAI.
 
-from adstractai import Adstract, AdRequestConfiguration
+Note: This example requires the 'openai' package to be installed locally for testing.
+      OpenAI is NOT a dependency of the adstractai package.
+      Install it separately: pip install openai
+"""
+
+import os
+
+from adstractai import Adstract, AdRequestContext
+from dotenv import load_dotenv
+
+load_dotenv()
 
 
-API_KEY = "adpk_live_gx6xbutnrkyjaqjd.uatnQaAhIho-QalyI5Cng3CRhJKobYWoBGFqrvzgdPQ"
+# Adstract API Key
+ADSTRACT_API_KEY = "adpk_live_p3n6qyh46c6lgqbs.z4FbvbggJjh54QUXQdD2tenE18lU8okTGK6h-bP_5Fs"
+
+# OpenAI API Key (set via environment variable or replace with your key)
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 
 
 def main():
-    print("=== Quick Demo ===")
+    print("=== Adstract + OpenAI Integration Demo ===")
 
-    # Initialize the client with XML wrapping type
-    client = Adstract(api_key=API_KEY, base_url="http://localhost:8000")
+    # Initialize the Adstract client
+    client = Adstract(api_key=ADSTRACT_API_KEY, base_url="http://localhost:8000")
 
-    config = AdRequestConfiguration(
+    context = AdRequestContext(
         session_id="user_session_123",
         user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
         x_forwarded_for="192.168.1.1",
     )
 
-    prompt = "What are some good ways to advertise with AI ?"
+    user_prompt = "What are some good ways to advertise with AI?"
 
     try:
-        # Step 1: Get ad enhancement
-        result = client.request_ad_or_default(prompt=prompt, config=config)
+        # Step 1: Get ad enhancement from Adstract
+        result = client.request_ad(prompt=user_prompt, context=context, raise_exception=True)
 
         if result.success:
-            print(f"✓ Ad enhancement successful")
+            print("✓ Ad enhancement successful")
+            print(f"  Product: {result.ad_response.product_name}")
 
-            # Step 2: Simulate LLM response with XML-wrapped ads
-            # This example shows how tracking_identifier affects total_ads_detected count
-            llm_response = f"""
-            Natively advertising with AI is all about integrating promotional content directly 
-            into user interactions in a way that feels organic and enhances the conversation. 
-            The best results come from leveraging AI’s contextual understanding to serve ads that 
-            are relevant to the user's interests or the current discussion—making them feel like helpful 
-            suggestions instead of interruptions.
+            # Step 2: Call OpenAI with the enhanced prompt
 
-            To do this effectively, you should:
-            
-            Utilize AI’s natural language capabilities to blend messages smoothly into the chat flow.
-            Match ad content with the conversation context to ensure high relevance.
-            Maintain transparency with clear but unobtrusive sponsored labels.
-            Continuously optimize ad delivery based on user engagement and feedback.
-            <ADS>
-            Sponsored
-            Looking to maximize your AI platform’s revenue without disrupting user experience? Adstract 
-            offers a next-generation solution for monetizing conversations with context-aware, semantically
-            matched ads built for LLMs and chatbots. Publishers can deliver non-intrusive, valuable ads, 
-            benefiting from advanced relevance scoring, fraud prevention, and dynamic pricing. 
-            
-            <a href="{result.ad_response.tracking_url}">Request access</a>
-            
-            to Adstract today. Performance may vary based on traffic quality and integration.
-            By using AI’s contextual intelligence and platforms designed for conversational environments, 
-            you can achieve effective native advertising that benefits both users and publishers.
-            </ADS>
-            """
+            from openai import OpenAI
+            openai_client = OpenAI(api_key=OPENAI_API_KEY)
 
-            # Step 3: Analyze and report
+            # Use the enhanced prompt from Adstract
+            response = openai_client.responses.create(
+                model="gpt-5-mini",
+                instructions="Always format your responses using clean HTML tags for better readability in chat. "
+                      "Use appropriate tags like <p>, <strong>, <em>, <ul>, <ol>, <li>, <code>, <pre>, "
+                      "etc. Do not include <html>, <head>, or <body> tags - only content tags.",
+                input=result.prompt,
+            )
+
+            llm_response = response.output_text
+            print("✓ OpenAI response received")
+
+            # Step 3: Report ad acknowledgment to Adstract
             client.analyse_and_report(enhancement_result=result, llm_response=llm_response)
+            print("✓ Ad acknowledgment reported")
 
-            print(f"✓ Ad ack report successful")
+        else:
+            print("✗ Ad enhancement not successful, using original prompt")
+            print(f"  Error: {result.error}")
 
     except Exception as e:
         print(f"Error: {e}")
