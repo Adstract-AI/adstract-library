@@ -23,9 +23,9 @@ from adstractai.constants import (
     MAX_RETRIES,
     SDK_HEADER_NAME,
     SDK_NAME,
-    SDK_TYPE,
     SDK_VERSION,
     SDK_VERSION_HEADER_NAME,
+    TYPE,
 )
 from adstractai.errors import (
     AdEnhancementError,
@@ -183,7 +183,7 @@ class Adstract:
         session_id = self._validate_session_id(config.session_id)
 
         # Build diagnostics
-        diagnostics = Diagnostics(type=SDK_TYPE, version=SDK_VERSION, name=SDK_NAME)
+        diagnostics = Diagnostics(type=TYPE, version=SDK_VERSION, name=SDK_NAME)
 
         # Build request context
         request_context = AdRequestContext(
@@ -269,6 +269,7 @@ class Adstract:
             AuthenticationError: If authentication fails (when raise_exception=True)
             RateLimitError: If rate limited (when raise_exception=True)
             ServerError: If server error occurs (when raise_exception=True)
+            AdEnhancementError: If response is unsuccessful or missing prompt data (when raise_exception=True)
 
         Note:
             When raise_exception=False, all errors are captured in the
@@ -378,6 +379,7 @@ class Adstract:
             AuthenticationError: If authentication fails (when raise_exception=True)
             RateLimitError: If rate limited (when raise_exception=True)
             ServerError: If server error occurs (when raise_exception=True)
+            AdEnhancementError: If response is unsuccessful or missing prompt data (when raise_exception=True)
 
         Note:
             When raise_exception=False, all errors are captured in the
@@ -759,7 +761,7 @@ class Adstract:
         ad_response_id = enhancement_result.ad_response.ad_response_id
 
         # Build diagnostics
-        diagnostics = Diagnostics(type=SDK_TYPE, version=SDK_VERSION, name=SDK_NAME)
+        diagnostics = Diagnostics(type=TYPE, version=SDK_VERSION, name=SDK_NAME)
 
         return AdAck(
             ad_response_id=ad_response_id,

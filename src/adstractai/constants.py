@@ -32,7 +32,7 @@ API_KEY_HEADER_NAME = "X-Adstract-API-Key"
 
 SDK_NAME = "adstractai-python"
 SDK_VERSION = "0.3.0"
-SDK_TYPE = "sdk"
+TYPE = "sdk"
 
 # Defaults
 DEFAULT_NOT_IMPLEMENTED_VALUE = -1
