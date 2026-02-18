@@ -2,9 +2,25 @@
 
 All notable changes to this project will be documented in this file.
 
-## Unreleased
+## 0.3.0 - 2026-02-18
 
-- No changes yet.
+### Breaking Changes
+
+- Removed `Conversation` class entirely - only `session_id` is now used in requests.
+- `EnhancementResult` now returns `session_id: str` instead of `conversation: Conversation`.
+- Renamed `AdRequestConfiguration` to `AdRequestContext` for clarity.
+- `AdRequestContext` now contains `session_id`, `user_agent`, and `x_forwarded_for` as a wrapped object in requests.
+- Created new `RequestConfiguration` class to wrap `wrapping_type` configuration option.
+- `AdRequest` now sends structured objects: `request_context` (AdRequestContext), `diagnostics` (Diagnostics), and `request_configuration` (RequestConfiguration).
+- Removed `ClientMetadata` and `Metadata` classes - client metadata is now computed on the backend.
+- Removed `Analytics`, `Compliance`, `ErrorTracking`, and `ExternalMetadata` classes - all analytics and compliance are now computed on the backend.
+- `AdAck` now only sends `ad_response_id`, `llm_response`, and `diagnostics` - all other fields are computed backend-side.
+- Removed `AepiData` class - API response structure simplified.
+- `AdResponse` now has simplified structure with only: `ad_request_id`, `ad_response_id`, `success`, `execution_time_ms`, `prompt` (optional), `product_name` (optional).
+- Removed fields from `AdResponse`: `aepi`, `tracking_url`, `tracking_identifier`, `sponsored_label`.
+- `request_ad` and `request_ad_async` now have `raise_exception=True` by default. Set to `False` for graceful fallback behavior.
+- Renamed `request_ad_or_default` to `request_ad` and `request_ad_or_default_async` to `request_ad_async`.
+- `analyse_and_report` and `analyse_and_report_async` now have `raise_exception=True` by default. Set to `False` to suppress errors.
 
 ## 0.2.1 - 2026-02-10
 

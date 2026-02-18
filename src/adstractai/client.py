@@ -4,13 +4,10 @@
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import json
 import logging
 import os
-import re
 import time
-from importlib import metadata as importlib_metadata
 from typing import Any, Literal, Optional
 
 import httpx
@@ -20,27 +17,18 @@ from adstractai.constants import (
     AD_INJECTION_ENDPOINT,
     API_KEY_HEADER_NAME,
     BASE_URL,
-    BOTTOM_PLACMENT_PERCENTAGE,
-    DEFAULT_ERROR_CODE,
-    DEFAULT_MAX_ADS,
-    DEFAULT_MAX_LATENCY,
-    DEFAULT_NOT_IMPLEMENTED_VALUE,
     DEFAULT_RETRIES,
     DEFAULT_TIMEOUT_SECONDS,
-    DEFAULT_TRUE_VALUE,
     ENV_API_KEY_NAME,
     MAX_RETRIES,
-    MIDDLE_PLACMENT_PERCENTAGE,
-    OVERLOADED_VALUE,
-    PLAIN_TAG,
     SDK_HEADER_NAME,
     SDK_NAME,
-    SDK_TYPE,
     SDK_VERSION,
     SDK_VERSION_HEADER_NAME,
-    XML_TAG,
+    TYPE,
 )
 from adstractai.errors import (
+    AdEnhancementError,
     AdSDKError,
     AuthenticationError,
     MissingParameterError,
@@ -53,16 +41,11 @@ from adstractai.errors import (
 from adstractai.models import (
     AdAck,
     AdRequest,
-    AdRequestConfiguration,
+    AdRequestContext,
     AdResponse,
-    Analytics,
-    Compliance,
-    Conversation,
     Diagnostics,
     EnhancementResult,
-    ErrorTracking,
-    ExternalMetadata,
-    Metadata,
+    RequestConfiguration,
 )
 
 logger = logging.getLogger(__name__)
@@ -160,57 +143,63 @@ class Adstract:
         if x_forwarded_for == "":
             raise MissingParameterError("x_forwarded_for parameter is required")
 
-    def _resolve_conversation(self, session_id: Optional[str]) -> Conversation:
+    def _validate_session_id(self, session_id: Optional[str]) -> str:
         """
-        Resolve conversation object from session_id.
+        Validate session_id parameter.
 
         Args:
-            session_id: Session ID string to create conversation from
+            session_id: Session ID string to validate
 
         Returns:
-            Conversation: Resolved conversation object
+            str: Validated session ID
 
         Raises:
-            MissingParameterError: If session_id is None
+            MissingParameterError: If session_id is None or empty
         """
-        if session_id is None:
+        if session_id is None or session_id == "":
             raise MissingParameterError("session_id parameter is required")
-        # Create conversation from session_id
-        msg_timestamp = f"msg_u_{str(int(time.time() * 1000))}"
-        return Conversation(conversation_id=session_id, session_id=session_id, message_id=msg_timestamp)
+        return session_id
 
     def _build_ad_request(
         self,
         *,
         prompt: str,
-        config: AdRequestConfiguration,
+        config: AdRequestContext,
     ) -> dict[str, Any]:
         """
         Build the complete ad request payload.
 
         Args:
             prompt: The user's prompt text
-            config: Configuration containing user_agent, x_forwarded_for, etc.
+            config: AdRequestContext containing session_id, user_agent, x_forwarded_for
 
         Returns:
             dict: Complete request payload ready to send to API
 
         Raises:
             MissingParameterError: If required parameters are missing
-            ValidationError: If metadata cannot be built
         """
         self._validate_required_params(config.user_agent, config.x_forwarded_for)
-        conversation_obj = self._resolve_conversation(config.session_id)
+        session_id = self._validate_session_id(config.session_id)
 
-        metadata = self._build_metadata(
+        # Build diagnostics
+        diagnostics = Diagnostics(type=TYPE, version=SDK_VERSION, name=SDK_NAME)
+
+        # Build request context
+        request_context = AdRequestContext(
+            session_id=session_id,
             user_agent=config.user_agent,
             x_forwarded_for=config.x_forwarded_for,
         )
+
+        # Build request configuration
+        request_configuration = RequestConfiguration(wrapping_type=self._wrapping_type)
+
         request_model = AdRequest.from_values(
             prompt=prompt,
-            conversation=conversation_obj,
-            metadata=metadata,
-            wrapping_type=self._wrapping_type,
+            request_context=request_context,
+            diagnostics=diagnostics,
+            request_configuration=request_configuration,
         )
         return request_model.to_payload()
 
@@ -218,7 +207,7 @@ class Adstract:
         self,
         *,
         prompt: str,
-        conversation: Conversation,
+        session_id: str,
         ad_response: Optional[AdResponse],
         success: bool,
         error: Optional[Exception] = None,
@@ -228,7 +217,7 @@ class Adstract:
 
         Args:
             prompt: The enhanced or original prompt text
-            conversation: Conversation object containing session/message info
+            session_id: Session identifier for the request
             ad_response: Response from the ad API (can be None for error cases)
             success: Whether the ad enhancement was successful
             error: Exception that occurred (if any)
@@ -238,167 +227,224 @@ class Adstract:
         """
         return EnhancementResult(
             prompt=prompt,
-            conversation=conversation,
+            session_id=session_id,
             ad_response=ad_response,
             success=success,
             error=error,
         )
 
-    def request_ad_or_default(
+    def request_ad(
         self,
         *,
         prompt: str,
-        config: AdRequestConfiguration,
+        context: AdRequestContext,
+        raise_exception: bool = True,
     ) -> EnhancementResult:
         """
-        Request ad enhancement with graceful fallback to original prompt.
+        Request ad enhancement with configurable error handling.
 
         This method attempts to enhance the provided prompt with relevant advertisements.
-        If the enhancement fails for any reason (network issues, API errors, etc.),
-        it gracefully falls back to returning the original prompt unchanged.
+        Error handling behavior is controlled by the raise_exception parameter.
 
         Args:
             prompt: The original text prompt to enhance with advertisements
-            config: Configuration object containing:
+            context: AdRequestContext object containing:
                 - session_id: Session/conversation context (required)
                 - user_agent: Browser user agent string (required)
                 - x_forwarded_for: Client IP address (required)
+            raise_exception: If True (default), raises exceptions on failure.
+                           If False, gracefully falls back to original prompt.
 
         Returns:
             EnhancementResult: Result object containing:
                 - prompt: Enhanced text with ads (success) or original text (failure)
-                - conversation: Full conversation context with IDs
+                - session_id: Session identifier for the request
                 - ad_response: API response object (None for network failures)
                 - success: True if enhancement succeeded, False if using fallback
                 - error: Exception details if fallback was triggered (None on success)
 
+        Raises:
+            MissingParameterError: If required parameters are missing (when raise_exception=True)
+            NetworkError: If network request fails (when raise_exception=True)
+            AuthenticationError: If authentication fails (when raise_exception=True)
+            RateLimitError: If rate limited (when raise_exception=True)
+            ServerError: If server error occurs (when raise_exception=True)
+            AdEnhancementError: If response is unsuccessful or missing prompt data (when raise_exception=True)
+
         Note:
-            This method never raises exceptions. All errors are captured in the
+            When raise_exception=False, all errors are captured in the
             returned EnhancementResult.error field and logged appropriately.
         """
-        # Resolve the conversation to use in the result
-        conversation_obj = self._resolve_conversation(config.session_id)
-
+        # Get the session_id to use in the result
         try:
-            payload = self._build_ad_request(
-                prompt=prompt,
-                config=config,
-            )
-
-            logger.debug(
-                "Sending ad request (with fallback)",
-                extra={"prompt_length": len(prompt)},
-            )
-
-            response = self._send_request(payload)
-
-            # Check if ad request was successful and has aepi data
-            if response.success:
-                return self._build_ad_enchancment_result(
-                    prompt=response.aepi.aepi_text,
-                    conversation=conversation_obj,
-                    ad_response=response,
-                    success=True,
-                    error=None,
-                )
-            else:
-                logger.debug("Ad request not successful or missing aepi data, returning original prompt")
-                return self._build_ad_enchancment_result(
-                    prompt=prompt,
-                    conversation=conversation_obj,
-                    ad_response=response,
-                    success=False,
-                    error=None,
-                )
-
-        except Exception as exc:
-            logger.debug("Ad request failed with exception, returning original prompt", exc_info=exc)
-
+            session_id = self._validate_session_id(context.session_id)
+        except MissingParameterError as exc:
+            if raise_exception:
+                raise
             return self._build_ad_enchancment_result(
                 prompt=prompt,
-                conversation=conversation_obj,
+                session_id=context.session_id or "",
                 ad_response=None,
                 success=False,
                 error=exc,
             )
 
-    async def request_ad_or_default_async(
-        self,
-        *,
-        prompt: str,
-        config: AdRequestConfiguration,
-    ) -> EnhancementResult:
-        """
-        Asynchronously request ad enhancement with graceful fallback to original prompt.
-
-        Async version of request_ad_or_default(). This method attempts to enhance the
-        provided prompt with relevant advertisements using async HTTP requests for
-        better concurrency in async applications.
-
-        If the enhancement fails for any reason (network issues, API errors, etc.),
-        it gracefully falls back to returning the original prompt unchanged.
-
-        Args:
-            prompt: The original text prompt to enhance with advertisements
-            config: Configuration object containing:
-                - session_id: Session/conversation context (required)
-                - user_agent: Browser user agent string (required)
-                - x_forwarded_for: Client IP address (required)
-
-        Returns:
-            EnhancementResult: Result object containing:
-                - prompt: Enhanced text with ads (success) or original text (failure)
-                - conversation: Full conversation context with IDs
-                - ad_response: API response object (None for network failures)
-                - success: True if enhancement succeeded, False if using fallback
-                - error: Exception details if fallback was triggered (None on success)
-
-        Note:
-            This method never raises exceptions. All errors are captured in the
-            returned EnhancementResult.error field and logged appropriately.
-            Use this method in async contexts when you want guaranteed response.
-        """
-        # Resolve the conversation to use in the result
-        conversation_obj = self._resolve_conversation(config.session_id)
-
         try:
             payload = self._build_ad_request(
                 prompt=prompt,
-                config=config,
+                config=context,
             )
 
             logger.debug(
-                "Sending async ad request (with fallback)",
-                extra={"prompt_length": len(prompt)},
+                "Sending ad request",
+                extra={"prompt_length": len(prompt), "raise_exception": raise_exception},
             )
 
-            response = await self._send_request_async(payload)
+            response = self._send_request(payload)
 
-            # Check if ad request was successful and has aepi data
-            if response.success:
+            # Check if ad request was successful and has prompt data
+            if response.success and response.prompt:
                 return self._build_ad_enchancment_result(
-                    prompt=response.aepi.aepi_text,
-                    conversation=conversation_obj,
+                    prompt=response.prompt,
+                    session_id=session_id,
                     ad_response=response,
                     success=True,
                     error=None,
                 )
             else:
-                logger.debug("Ad request not successful or missing aepi data, returning original prompt")
+                logger.debug("Ad request not successful or missing prompt data, returning original prompt")
+                error = AdEnhancementError(
+                    "Ad enhancement failed: response unsuccessful or missing prompt data"
+                )
+                if raise_exception:
+                    raise error
                 return self._build_ad_enchancment_result(
                     prompt=prompt,
-                    conversation=conversation_obj,
+                    session_id=session_id,
                     ad_response=response,
                     success=False,
-                    error=None,
+                    error=error,
                 )
 
         except Exception as exc:
+            if raise_exception:
+                raise
+
             logger.debug("Ad request failed with exception, returning original prompt", exc_info=exc)
 
             return self._build_ad_enchancment_result(
                 prompt=prompt,
-                conversation=conversation_obj,
+                session_id=session_id,
+                ad_response=None,
+                success=False,
+                error=exc,
+            )
+
+    async def request_ad_async(
+        self,
+        *,
+        prompt: str,
+        context: AdRequestContext,
+        raise_exception: bool = True,
+    ) -> EnhancementResult:
+        """
+        Asynchronously request ad enhancement with configurable error handling.
+
+        Async version of request_ad(). This method attempts to enhance the
+        provided prompt with relevant advertisements using async HTTP requests for
+        better concurrency in async applications.
+
+        Error handling behavior is controlled by the raise_exception parameter.
+
+        Args:
+            prompt: The original text prompt to enhance with advertisements
+            context: AdRequestContext object containing:
+                - session_id: Session/conversation context (required)
+                - user_agent: Browser user agent string (required)
+                - x_forwarded_for: Client IP address (required)
+            raise_exception: If True (default), raises exceptions on failure.
+                           If False, gracefully falls back to original prompt.
+
+        Returns:
+            EnhancementResult: Result object containing:
+                - prompt: Enhanced text with ads (success) or original text (failure)
+                - session_id: Session identifier for the request
+                - ad_response: API response object (None for network failures)
+                - success: True if enhancement succeeded, False if using fallback
+                - error: Exception details if fallback was triggered (None on success)
+
+        Raises:
+            MissingParameterError: If required parameters are missing (when raise_exception=True)
+            NetworkError: If network request fails (when raise_exception=True)
+            AuthenticationError: If authentication fails (when raise_exception=True)
+            RateLimitError: If rate limited (when raise_exception=True)
+            ServerError: If server error occurs (when raise_exception=True)
+            AdEnhancementError: If response is unsuccessful or missing prompt data (when raise_exception=True)
+
+        Note:
+            When raise_exception=False, all errors are captured in the
+            returned EnhancementResult.error field and logged appropriately.
+        """
+        # Get the session_id to use in the result
+        try:
+            session_id = self._validate_session_id(context.session_id)
+        except MissingParameterError as exc:
+            if raise_exception:
+                raise
+            return self._build_ad_enchancment_result(
+                prompt=prompt,
+                session_id=context.session_id or "",
+                ad_response=None,
+                success=False,
+                error=exc,
+            )
+
+        try:
+            payload = self._build_ad_request(
+                prompt=prompt,
+                config=context,
+            )
+
+            logger.debug(
+                "Sending async ad request",
+                extra={"prompt_length": len(prompt), "raise_exception": raise_exception},
+            )
+
+            response = await self._send_request_async(payload)
+
+            # Check if ad request was successful and has prompt data
+            if response.success and response.prompt:
+                return self._build_ad_enchancment_result(
+                    prompt=response.prompt,
+                    session_id=session_id,
+                    ad_response=response,
+                    success=True,
+                    error=None,
+                )
+            else:
+                logger.debug("Ad request not successful or missing prompt data, returning original prompt")
+                error = AdEnhancementError(
+                    "Ad enhancement failed: response unsuccessful or missing prompt data"
+                )
+                if raise_exception:
+                    raise error
+                return self._build_ad_enchancment_result(
+                    prompt=prompt,
+                    session_id=session_id,
+                    ad_response=response,
+                    success=False,
+                    error=error,
+                )
+
+        except Exception as exc:
+            if raise_exception:
+                raise
+
+            logger.debug("Ad request failed with exception, returning original prompt", exc_info=exc)
+
+            return self._build_ad_enchancment_result(
+                prompt=prompt,
+                session_id=session_id,
                 ad_response=None,
                 success=False,
                 error=exc,
@@ -602,222 +648,38 @@ class Adstract:
             API_KEY_HEADER_NAME: self._api_key,
         }
 
-    def _build_metadata(
-        self,
-        *,
-        user_agent: str,
-        x_forwarded_for: str,
-    ) -> Metadata:
-        """
-        Build metadata object for API requests.
-
-        Args:
-            user_agent: User agent string from the client
-            x_forwarded_for: X-Forwarded-For header value
-
-        Returns:
-            Metadata: Metadata object containing client information
-
-        Raises:
-            ValidationError: If user_agent is invalid or metadata cannot be built
-        """
-        if len(user_agent) < MIN_USER_AGENT_LENGTH:
-            raise ValidationError("user_agent is invalid")
-
-        derived_client = _build_client_metadata(user_agent, x_forwarded_for)
-        metadata_dict = {"client": derived_client}
-
-        try:
-            return Metadata.model_validate(metadata_dict)
-        except Exception as exc:
-            raise ValidationError("Failed to build metadata") from exc
-
-    def _build_analytics(self, enhancement_result: EnhancementResult, llm_response: str) -> Analytics:
-        """
-        Build analytics data from enhancement result and LLM response.
-
-        Analyzes the LLM response to extract ad-related metrics including:
-        - Total ads detected (based on tracking_identifier count)
-        - Word count analysis and ad word ratio
-        - Sponsored label counting
-        - Ad placement position analysis
-        - Overload detection
-
-        Args:
-            enhancement_result: Result from the ad enhancement request
-            llm_response: The actual response text from the LLM
-
-        Returns:
-            Analytics: Complete analytics data for the ad acknowledgment
-        """
-        # Determine wrapping tags based on wrapping_type
-        tag_name = XML_TAG if self._wrapping_type == "xml" else PLAIN_TAG
-
-        # Extract ad content blocks differently based on wrapping type
-        ad_content_blocks = []
-
-        if self._wrapping_type == "xml":
-            # For XML: get content between <ADS> and </ADS>
-            pattern = rf"<{re.escape(tag_name)}>(.*?)</{re.escape(tag_name)}>"
-            ad_content_blocks = re.findall(pattern, llm_response, re.DOTALL | re.IGNORECASE)
-        else:
-            # For plain: get content between sponsored_label and DEFAULT_PLAIN_TAG
-            sponsored_label = enhancement_result.ad_response.sponsored_label
-            # Pattern: from sponsored_label to DEFAULT_PLAIN_TAG
-            pattern = rf"{re.escape(sponsored_label)}(.*?){re.escape(tag_name)}"  # pyright: ignore[reportArgumentType]
-            ad_content_blocks = re.findall(pattern, llm_response, re.DOTALL | re.IGNORECASE)
-
-        # Calculate total_ads_detected by counting tracking_identifier occurrences in ad blocks
-        total_ads_detected = 0
-        tracking_identifier = enhancement_result.ad_response.tracking_identifier
-        # Count tracking_identifier occurrences in all ad content blocks
-        for ad_block in ad_content_blocks:
-            total_ads_detected += ad_block.count(tracking_identifier)
-
-        # Links analysis (not implemented yet)
-        valid_links = DEFAULT_NOT_IMPLEMENTED_VALUE
-        invalid_links = DEFAULT_NOT_IMPLEMENTED_VALUE
-
-        # Total links from tracking_url in AdResponse
-        total_links = llm_response.count(enhancement_result.ad_response.tracking_url)  # pyright: ignore[reportArgumentType]
-
-        # Word count analysis
-        total_words = len(llm_response.split())
-        ad_word_count = 0
-        for ad_content in ad_content_blocks:
-            ad_word_count += len(ad_content.split())
-
-        # Calculate ad word ratio
-        ad_word_ratio = round(ad_word_count / total_words, 2) if total_words > 0 else 0.0
-
-        # Check if overloaded
-        ratio_float = float(ad_word_ratio)
-        is_overloaded = ratio_float > OVERLOADED_VALUE
-
-        # Count sponsored labels
-        sponsored_labels_count = llm_response.count(enhancement_result.ad_response.sponsored_label)  # pyright: ignore[reportArgumentType]
-
-        # Format validation (default)
-        format_valid = DEFAULT_TRUE_VALUE
-
-        # General placement position
-        general_placement_position = self._calculate_placement_position(
-            llm_response, ad_content_blocks, tag_name, enhancement_result
-        )
-
-        # Scores (not implemented yet)
-        natural_flow_score = DEFAULT_NOT_IMPLEMENTED_VALUE
-        overall_response_score = DEFAULT_NOT_IMPLEMENTED_VALUE
-        ad_score = DEFAULT_NOT_IMPLEMENTED_VALUE
-
-        return Analytics(
-            total_ads_detected=total_ads_detected,
-            valid_links=valid_links,
-            invalid_links=invalid_links,
-            total_links=total_links,
-            total_words=total_words,
-            ad_word_ratio=ad_word_ratio,
-            is_overloaded=is_overloaded,
-            sponsored_labels_count=sponsored_labels_count,
-            format_valid=format_valid,
-            general_placement_position=general_placement_position,
-            natural_flow_score=natural_flow_score,
-            overall_response_score=overall_response_score,
-            ad_score=ad_score,
-        )
-
-    def _calculate_placement_position(
-        self,
-        llm_response: str,
-        ad_content_blocks: list[str],
-        tag_name: str,
-        enhancement_result: EnhancementResult,
-    ) -> str:
-        """
-        Calculate where the ad is positioned in the response.
-
-        Analyzes the position of the first ad block within the LLM response
-        and categorizes it as "top", "middle", "bottom", "none", or "unknown".
-
-        Args:
-            llm_response: The full LLM response text
-            ad_content_blocks: List of extracted ad content blocks
-            tag_name: The tag name used for wrapping (XML_TAG or PLAIN_TAG)
-            enhancement_result: Result containing sponsored_label for plain text analysis
-
-        Returns:
-            str: Position category ("top", "middle", "bottom", "none", "unknown")
-        """
-        if not ad_content_blocks:
-            return "none"
-
-        response_length = len(llm_response)
-        if response_length == 0:
-            return "unknown"
-
-        # Find the position of the first ad block based on wrapping type
-        if self._wrapping_type == "xml":
-            # For XML: look for <ADS> tag
-            pattern = rf"<{re.escape(tag_name)}>"
-            match = re.search(pattern, llm_response, re.IGNORECASE)
-        else:
-            # For plain: look for sponsored_label (start of ad block)
-            sponsored_label = enhancement_result.ad_response.sponsored_label
-            match = re.search(re.escape(sponsored_label), llm_response, re.IGNORECASE)  # pyright: ignore[reportArgumentType]
-
-        if not match:
-            return "unknown"
-
-        ad_start_position = match.start()
-        position_percentage = ad_start_position / response_length
-
-        # Determine placement based on position
-        if position_percentage <= BOTTOM_PLACMENT_PERCENTAGE:
-            return "top"
-        elif position_percentage <= MIDDLE_PLACMENT_PERCENTAGE:
-            return "middle"
-        else:
-            return "bottom"
-
     def analyse_and_report(
         self,
         *,
         enhancement_result: EnhancementResult,
         llm_response: str,
+        raise_exception: bool = True,
     ) -> None:
         """
-        Analyze the LLM response and report ad acknowledgment to the backend.
+        Report ad acknowledgment to the backend with configurable error handling.
         Only reports if the enhancement was successful (ad was injected).
-
-        Performs comprehensive analytics on the LLM response including:
-        - Ad detection and counting
-        - Word ratio analysis
-        - Placement position calculation
-        - Compliance checking
-        - Error tracking
 
         Args:
             enhancement_result: The EnhancementResult from the ad request
             llm_response: The actual response from the LLM
+            raise_exception: If True (default), raises exceptions on failure.
+                           If False, logs errors but doesn't raise exceptions.
 
         Raises:
-            Exception: Re-raises any exception that occurred during analysis after
-                      reporting it to the backend with error tracking information.
+            Exception: Any exception during reporting (when raise_exception=True)
 
         Note:
-            This method always reports to the backend first, then re-raises any
-            errors that occurred during the analysis process. This ensures backend
-            tracking while still propagating errors to the caller.
+            When raise_exception=False, errors are logged but not raised,
+            avoiding disruption to the main application flow.
+            All analytics and compliance are computed on the backend.
         """
-        # Only analyze and report if enhancement was successful (ad was injected)
+        # Only report if enhancement was successful (ad was injected)
         if not enhancement_result.success:
             logger.debug(
                 "Skipping ad acknowledgment - no successful ad enhancement",
                 extra={"success": enhancement_result.success},
             )
             return
-
-        analysis_error = None
 
         try:
             # Build the AdAck payload
@@ -827,54 +689,43 @@ class Adstract:
             self._send_ad_ack(ad_ack)
 
         except Exception as exc:
-            analysis_error = exc
-            logger.error("Failed to analyze and report ad acknowledgment", exc_info=exc)
-            # Even if analysis fails, we still need to report with error tracking
-            try:
-                error_ad_ack = self._build_error_ad_ack(enhancement_result, llm_response, exc)
-                self._send_ad_ack(error_ad_ack)
-            except Exception as inner_exc:
-                logger.error("Failed to send error ad acknowledgment", exc_info=inner_exc)
-
-        # Re-raise the original analysis error after reporting
-        if analysis_error:
-            raise analysis_error
+            if raise_exception:
+                raise
+            logger.error("Failed to send ad acknowledgment", exc_info=exc)
 
     async def analyse_and_report_async(
         self,
         *,
         enhancement_result: EnhancementResult,
         llm_response: str,
+        raise_exception: bool = True,
     ) -> None:
         """
-        Async version of analyze and report ad acknowledgment to the backend.
+        Async version of analyse_and_report with configurable error handling.
+        Report ad acknowledgment to the backend asynchronously.
         Only reports if the enhancement was successful (ad was injected).
-
-        Performs the same comprehensive analytics as analyse_and_report but
-        uses async HTTP requests for better concurrency.
 
         Args:
             enhancement_result: The EnhancementResult from the ad request
             llm_response: The actual response from the LLM
+            raise_exception: If True (default), raises exceptions on failure.
+                           If False, logs errors but doesn't raise exceptions.
 
         Raises:
-            Exception: Re-raises any exception that occurred during analysis after
-                      reporting it to the backend with error tracking information.
+            Exception: Any exception during reporting (when raise_exception=True)
 
         Note:
-            This method always reports to the backend first, then re-raises any
-            errors that occurred during the analysis process. This ensures backend
-            tracking while still propagating errors to the caller.
+            When raise_exception=False, errors are logged but not raised,
+            avoiding disruption to the main application flow.
+            All analytics and compliance are computed on the backend.
         """
-        # Only analyze and report if enhancement was successful (ad was injected)
+        # Only report if enhancement was successful (ad was injected)
         if not enhancement_result.success:
             logger.debug(
                 "Skipping ad acknowledgment - no successful ad enhancement",
                 extra={"success": enhancement_result.success},
             )
             return
-
-        analysis_error = None
 
         try:
             # Build the AdAck payload
@@ -884,138 +735,39 @@ class Adstract:
             await self._send_ad_ack_async(ad_ack)
 
         except Exception as exc:
-            analysis_error = exc
-            logger.error("Failed to analyze and report ad acknowledgment", exc_info=exc)
-            # Even if analysis fails, we still need to report with error tracking
-            try:
-                error_ad_ack = self._build_error_ad_ack(enhancement_result, llm_response, exc)
-                await self._send_ad_ack_async(error_ad_ack)
-            except Exception as inner_exc:
-                logger.error("Failed to send error ad acknowledgment", exc_info=inner_exc)
-
-        # Re-raise the original analysis error after reporting
-        if analysis_error:
-            raise analysis_error
+            if raise_exception:
+                raise
+            logger.error("Failed to send ad acknowledgment", exc_info=exc)
 
     def _build_ad_ack(
         self,
         enhancement_result: EnhancementResult,
         llm_response: str,
-        error: Optional[Exception] = None,
     ) -> AdAck:
         """
         Build AdAck payload from enhancement result and LLM response.
 
-        Creates a complete ad acknowledgment payload including analytics, diagnostics,
-        compliance checks, external metadata, and error tracking.
+        Creates a simple ad acknowledgment payload with only essential information.
+        All analytics, compliance, and metadata are now computed on the backend.
 
         Args:
             enhancement_result: Result from the ad enhancement request
             llm_response: The actual response text from the LLM
-            error: Exception that occurred during processing (if any)
 
         Returns:
-            AdAck: Complete ad acknowledgment payload ready for backend
+            AdAck: Simple ad acknowledgment payload ready for backend
         """
         # Get ad_response_id from the enhancement result
         ad_response_id = enhancement_result.ad_response.ad_response_id
-        execution_time_ms = enhancement_result.ad_response.execution_time_ms
 
         # Build diagnostics
-        diagnostics = Diagnostics(sdk_type=SDK_TYPE, sdk_version=SDK_VERSION, sdk_name=SDK_NAME)
-
-        # Build compliance
-        analytics = self._build_analytics(enhancement_result, llm_response)
-        max_ads_policy_ok = analytics.total_ads_detected <= DEFAULT_MAX_ADS
-        max_latency_policy_ok = execution_time_ms <= (DEFAULT_MAX_LATENCY * 1000)  # Convert to ms
-
-        compliance = Compliance(
-            max_ads_policy_ok=max_ads_policy_ok, max_latency_policy_ok=max_latency_policy_ok
-        )
-
-        # Build external metadata
-        response_hash = self._hash_response(llm_response)
-        aepi_checksum = self._calculate_checksum(enhancement_result.ad_response.aepi.aepi_text)
-
-        # Create externalMetadata
-        original_message_id = enhancement_result.conversation.message_id
-        assistant_message_id = original_message_id.replace("msg_u_", "msg_a_")
-
-        external_metadata = ExternalMetadata(
-            response_hash=response_hash,
-            aepi_checksum=aepi_checksum,
-            conversation_id=enhancement_result.conversation.conversation_id,
-            session_id=enhancement_result.conversation.session_id,
-            message_id=assistant_message_id,
-        )
-
-        # Build error tracking
-        error_tracking = None
-        if error:
-            error_tracking = ErrorTracking(error_code=DEFAULT_ERROR_CODE, error_message=str(error))
-
-        if error:
-            ad_status = "error"
-        else:
-            ad_status = "ok" if analytics.total_ads_detected >= DEFAULT_MAX_ADS else "no_ad_used"
+        diagnostics = Diagnostics(type=TYPE, version=SDK_VERSION, name=SDK_NAME)
 
         return AdAck(
             ad_response_id=ad_response_id,
-            ad_status=ad_status,
-            analytics=analytics,
+            llm_response=llm_response,
             diagnostics=diagnostics,
-            compliance=compliance,
-            error_tracking=error_tracking,
-            external_metadata=external_metadata,
         )
-
-    def _build_error_ad_ack(
-        self, enhancement_result: EnhancementResult, llm_response: str, error: Exception
-    ) -> AdAck:
-        """
-        Build AdAck payload for error cases.
-
-        Creates an ad acknowledgment payload specifically for error scenarios,
-        ensuring that error tracking information is properly included.
-
-        Args:
-            enhancement_result: Result from the ad enhancement request
-            llm_response: The actual response text from the LLM
-            error: Exception that occurred during processing
-
-        Returns:
-            AdAck: Ad acknowledgment payload with error tracking
-        """
-        return self._build_ad_ack(enhancement_result, llm_response, error)
-
-    def _hash_response(self, response: str) -> str:
-        """
-        Generate SHA256 hash of the response.
-
-        Creates a unique hash of the LLM response for tracking and verification purposes.
-
-        Args:
-            response: The LLM response text to hash
-
-        Returns:
-            str: SHA256 hash of the response as hexadecimal string
-        """
-        return hashlib.sha256(response.encode("utf-8")).hexdigest()
-
-    def _calculate_checksum(self, text: str) -> str:
-        """
-        Calculate MD5 checksum of the aepi text.
-
-        Creates a checksum of the enhanced prompt text for integrity verification.
-
-        Args:
-            text: The aepi text to calculate checksum for
-
-        Returns:
-            str: MD5 checksum as hexadecimal string
-        """
-        """Calculate checksum of the aepi text."""
-        return hashlib.md5(text.encode("utf-8")).hexdigest()
 
     def _ad_ack_endpoint(self) -> str:
         """
@@ -1105,163 +857,3 @@ def _snippet(response: httpx.Response, limit: int = 200) -> Optional[str]:
     if response.text is None:
         return None
     return response.text[:limit]
-
-
-def _build_client_metadata(user_agent: str, x_forwarded_for: str) -> dict[str, Any]:
-    """
-    Build client metadata dictionary from user agent and forwarded IP.
-
-    Parses user agent string to extract browser, OS, and device information,
-    then constructs a metadata dictionary for API requests.
-
-    Args:
-        user_agent: User agent string from the client
-        x_forwarded_for: X-Forwarded-For header value (client IP)
-
-    Returns:
-        dict[str, Any]: Dictionary containing client metadata including:
-            - user_agent_hash: SHA256 hash of user agent
-            - device_type: Device category (desktop, mobile, tablet, bot, unknown)
-            - sdk_version: Current SDK version
-            - x_forwarded_for: Client IP address
-            - os_family: Operating system family (optional)
-            - browser_family: Browser family (optional)
-    """
-    user_agent_hash = hashlib.sha256(user_agent.encode("utf-8")).hexdigest()
-    os_family = _parse_os_family(user_agent)
-    browser_family = _parse_browser_family(user_agent)
-    device_type = _parse_device_type(user_agent)
-    sdk_version = _sdk_version()
-    client: dict[str, Any] = {
-        "user_agent_hash": user_agent_hash,
-        "device_type": device_type,
-        "sdk_version": sdk_version,
-        "x_forwarded_for": x_forwarded_for,
-    }
-    if os_family:
-        client["os_family"] = os_family
-    if browser_family:
-        client["browser_family"] = browser_family
-    return client
-
-
-def _parse_device_type(user_agent: str) -> str:
-    """
-    Parse device type from user agent string.
-
-    Analyzes the user agent string to categorize the device type.
-
-    Args:
-        user_agent: User agent string to parse
-
-    Returns:
-        str: Device type category:
-            - "bot": Web crawlers, bots, spiders
-            - "tablet": Tablets, iPads
-            - "mobile": Mobile phones, smartphones
-            - "desktop": Desktop computers, laptops
-            - "unknown": Unrecognized device type
-    """
-    value = user_agent.lower()
-    if any(token in value for token in ["bot", "crawler", "spider", "slurp", "bingpreview"]):
-        return "bot"
-    if "ipad" in value or "tablet" in value:
-        return "tablet"
-    if "mobile" in value or "iphone" in value or "android" in value:
-        return "mobile"
-    if any(token in value for token in ["windows", "macintosh", "linux", "cros"]):
-        return "desktop"
-    return "unknown"
-
-
-def _parse_os_family(user_agent: str) -> Optional[str]:
-    """
-    Parse operating system family from user agent string.
-
-    Extracts the operating system information from the user agent string
-    by matching against known OS identifiers.
-
-    Args:
-        user_agent: User agent string to parse
-
-    Returns:
-        Optional[str]: Operating system family:
-            - "Windows": Microsoft Windows
-            - "Android": Android mobile OS
-            - "iOS": Apple iOS (iPhone/iPad)
-            - "macOS": Apple macOS
-            - "ChromeOS": Google Chrome OS
-            - "Linux": Linux distributions
-            - None: Unrecognized or no OS information
-    """
-    value = user_agent.lower()
-    candidates = (
-        ("windows", "Windows"),
-        ("android", "Android"),
-        ("iphone", "iOS"),
-        ("ipad", "iOS"),
-        ("ios", "iOS"),
-        ("mac os x", "macOS"),
-        ("macintosh", "macOS"),
-        ("cros", "ChromeOS"),
-        ("linux", "Linux"),
-    )
-    for token, label in candidates:
-        if token in value:
-            return label
-    return None
-
-
-def _parse_browser_family(user_agent: str) -> Optional[str]:
-    """
-    Parse browser family from user agent string.
-
-    Identifies the browser type from the user agent string by matching
-    against known browser identifiers in order of specificity.
-
-    Args:
-        user_agent: User agent string to parse
-
-    Returns:
-        Optional[str]: Browser family:
-            - "Edge": Microsoft Edge
-            - "Opera": Opera browser
-            - "Chrome": Google Chrome
-            - "Safari": Apple Safari
-            - "Firefox": Mozilla Firefox
-            - "Chromium": Chromium-based browsers
-            - None: Unrecognized or no browser information
-    """
-    value = user_agent.lower()
-    if "edg" in value:
-        result = "Edge"
-    elif "opr" in value or "opera" in value:
-        result = "Opera"
-    elif "chrome" in value and "chromium" not in value and "edg" not in value:
-        result = "Chrome"
-    elif "safari" in value and "chrome" not in value and "chromium" not in value:
-        result = "Safari"
-    elif "firefox" in value:
-        result = "Firefox"
-    elif "chromium" in value:
-        result = "Chromium"
-    else:
-        result = None
-    return result
-
-
-def _sdk_version() -> str:
-    """
-    Get the current SDK version from package metadata.
-
-    Attempts to retrieve the installed version of the adstractai package
-    using importlib metadata. Falls back to "0.0.0" if the package
-    metadata is not available (e.g., during development).
-
-    Returns:
-        str: Version string (e.g., "1.2.3") or "0.0.0" if not found
-    """
-    try:
-        return importlib_metadata.version("adstractai")
-    except importlib_metadata.PackageNotFoundError:
-        return "0.0.0"
