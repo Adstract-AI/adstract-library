@@ -13,6 +13,7 @@ dist/
 venv/
 env/
 .env
+examples/.env
 .coverage
 coverage.xml
 .tox/
