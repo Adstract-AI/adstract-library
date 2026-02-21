@@ -6,6 +6,11 @@ BASE_URL = os.getenv("ADSTRACT_DEBUG_URL", "https://api.adstract.ai")
 AD_INJECTION_ENDPOINT = "/api/ad-injection/start/"
 AD_ACK_ENDPOINT = "/api/ad-ack/ad-ack/create/"
 
+# Versioning and identification
+SDK_NAME = "adstractai-python"
+SDK_VERSION = "0.3.1"
+TYPE = "sdk"
+
 DEFAULT_TIMEOUT_SECONDS = 100
 
 DEFAULT_RETRIES = 0
@@ -29,10 +34,6 @@ ENV_API_KEY_NAME = "ADSTRACT_API_KEY"
 SDK_HEADER_NAME = "X-Adstract-SDK"
 SDK_VERSION_HEADER_NAME = "X-Adstract-SDK-Version"
 API_KEY_HEADER_NAME = "X-Adstract-API-Key"
-
-SDK_NAME = "adstractai-python"
-SDK_VERSION = "0.3.0"
-TYPE = "sdk"
 
 # Defaults
 DEFAULT_NOT_IMPLEMENTED_VALUE = -1

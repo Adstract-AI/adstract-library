@@ -25,7 +25,7 @@ def main():
     print("=== Adstract + OpenAI Integration Demo ===")
 
     # Initialize the Adstract client
-    client = Adstract(api_key=ADSTRACT_API_KEY, base_url="http://localhost:8000")
+    client = Adstract(api_key=ADSTRACT_API_KEY, base_url="http://localhost:8000", wrapping_type="markdown")
 
     context = AdRequestContext(
         session_id="user_session_123",

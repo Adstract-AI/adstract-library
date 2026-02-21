@@ -20,6 +20,7 @@ from adstractai.errors import (
     MissingParameterError,
     RateLimitError,
     ServerError,
+    ValidationError,
 )
 from adstractai.models import (
     AdRequestContext,
@@ -520,6 +521,75 @@ def test_analyse_and_report_async() -> None:
     asyncio.run(run_test())
 
 
+# ============================================================================
+# Tests for wrapping_type (xml, plain, markdown)
+# ============================================================================
 
 
+@pytest.mark.parametrize("wrapping_type", ["xml", "plain", "markdown"])
+def test_wrapping_type_sent_in_request_configuration(wrapping_type: str) -> None:
+    """Test that the chosen wrapping_type is forwarded in request_configuration."""
+    captured = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["payload"] = json.loads(request.content.decode("utf-8"))
+        return httpx.Response(
+            200,
+            json={
+                "ad_request_id": "test-wt",
+                "ad_response_id": "test-wt",
+                "success": True,
+                "execution_time_ms": 50.0,
+                "prompt": "Enhanced prompt",
+                "product_name": "Test Product",
+            },
+        )
+
+    transport = httpx.MockTransport(handler)
+    client = Adstract(
+        api_key=API_KEY,
+        http_client=httpx.Client(transport=transport),
+        wrapping_type=wrapping_type,  # type: ignore[arg-type]
+    )
+
+    client.request_ad(prompt=_valid_prompt(), context=_valid_config())
+
+    sent = captured["payload"]
+    assert "request_configuration" in sent
+    assert sent["request_configuration"]["wrapping_type"] == wrapping_type
+
+
+def test_wrapping_type_default_is_xml() -> None:
+    """Test that omitting wrapping_type defaults to 'xml'."""
+    captured = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["payload"] = json.loads(request.content.decode("utf-8"))
+        return httpx.Response(
+            200,
+            json={
+                "ad_request_id": "test-default",
+                "ad_response_id": "test-default",
+                "success": True,
+                "execution_time_ms": 50.0,
+                "prompt": "Enhanced prompt",
+                "product_name": "Test Product",
+            },
+        )
+
+    transport = httpx.MockTransport(handler)
+    client = Adstract(
+        api_key=API_KEY,
+        http_client=httpx.Client(transport=transport),
+    )
+
+    client.request_ad(prompt=_valid_prompt(), context=_valid_config())
+
+    assert captured["payload"]["request_configuration"]["wrapping_type"] == "xml"
+
+
+def test_invalid_wrapping_type_raises_validation_error() -> None:
+    """Test that an unsupported wrapping_type raises ValidationError on client init."""
+    with pytest.raises(ValidationError):
+        Adstract(api_key=API_KEY, wrapping_type="html")  # type: ignore[arg-type]
 
