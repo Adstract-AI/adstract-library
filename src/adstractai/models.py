@@ -108,7 +108,8 @@ class RequestConfiguration(BaseModel):
     Contains configuration settings that control how ads are processed and embedded.
 
     Attributes:
-        wrapping_type: Ad wrapping format ("xml" for <ADS> tags, "plain" for custom delimiters)
+        wrapping_type: Ad wrapping format ("xml" for <ADS> tags, "plain" for custom delimiters,
+        "markdown" for markdown formatting)
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -128,12 +129,12 @@ class RequestConfiguration(BaseModel):
             Optional[str]: Validated wrapping type or None
 
         Raises:
-            ValueError: If wrapping type is not "xml" or "plain"
+            ValueError: If wrapping type is not "xml", "plain", or "markdown"
         """
         if value is None:
             return None
-        if value not in {"xml", "plain"}:
-            raise ValueError("wrapping_type must be 'xml' or 'plain'")
+        if value not in {"xml", "plain", "markdown"}:
+            raise ValueError("wrapping_type must be 'xml', 'plain', or 'markdown'")
         return value
 
 

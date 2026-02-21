@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.3.1 - 2026-02-21
+
+### Added
+
+- Added `"markdown"` as a supported `wrapping_type` option. Alongside `"xml"` and `"plain"`, you can now pass `wrapping_type="markdown"` to the `Adstract` client to receive ad injections formatted as Markdown.
+
 ## 0.3.0 - 2026-02-18
 
 ### Breaking Changes
@@ -21,6 +27,7 @@ All notable changes to this project will be documented in this file.
 - `request_ad` and `request_ad_async` now have `raise_exception=True` by default. Set to `False` for graceful fallback behavior.
 - Renamed `request_ad_or_default` to `request_ad` and `request_ad_or_default_async` to `request_ad_async`.
 - `analyse_and_report` and `analyse_and_report_async` now have `raise_exception=True` by default. Set to `False` to suppress errors.
+
 
 ## 0.2.1 - 2026-02-10
 
