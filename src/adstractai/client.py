@@ -73,7 +73,7 @@ class Adstract:
         max_backoff: float = 8.0,
         http_client: Optional[httpx.Client] = None,
         async_http_client: Optional[httpx.AsyncClient] = None,
-        wrapping_type: Optional[Literal["xml", "plain"]] = None,
+        wrapping_type: Optional[Literal["xml", "plain", "markdown"]] = None,
     ) -> None:
         """
         Initialize the Adstract client.
@@ -87,7 +87,7 @@ class Adstract:
             max_backoff: Maximum backoff time in seconds. Defaults to 8.0.
             http_client: Custom HTTP client instance. If None, creates a new one.
             async_http_client: Custom async HTTP client instance. If None, creates a new one.
-            wrapping_type: Type of ad wrapping ("xml" or "plain"). Defaults to "xml".
+            wrapping_type: Type of ad wrapping ("xml", "plain", or "markdown"). Defaults to "xml".
 
         Raises:
             ValidationError: If API key is invalid or wrapping_type is not supported.
@@ -98,8 +98,8 @@ class Adstract:
             raise ValidationError("api_key must be at least 10 characters")
 
         # Validate wrapping_type if provided
-        if wrapping_type is not None and wrapping_type not in {"xml", "plain"}:
-            raise ValidationError("wrapping_type must be 'xml' or 'plain'")
+        if wrapping_type is not None and wrapping_type not in {"xml", "plain", "markdown"}:
+            raise ValidationError("wrapping_type must be 'xml', 'plain', or 'markdown'")
 
         self._api_key = api_key
         self._base_url = base_url or BASE_URL
