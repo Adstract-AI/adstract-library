@@ -8,14 +8,13 @@ Note: This example requires the 'openai' package to be installed locally for tes
 
 import os
 
-from adstractai import Adstract, AdRequestContext
+from adstractai import Adstract, AdRequestContext, OptionalContext
 from dotenv import load_dotenv
 
 load_dotenv()
 
-
 # Adstract API Key
-ADSTRACT_API_KEY = "adpk_live_p3n6qyh46c6lgqbs.z4FbvbggJjh54QUXQdD2tenE18lU8okTGK6h-bP_5Fs"
+ADSTRACT_API_KEY = "adpk_live_wc2yahh2trc7tixu.mj1FvgtOygLkLavGLb4JtFdJTNecW7m94O7KxfnGBlw"
 
 # OpenAI API Key (set via environment variable or replace with your key)
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
@@ -30,14 +29,25 @@ def main():
     context = AdRequestContext(
         session_id="user_session_123",
         user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        x_forwarded_for="192.168.1.1",
+        user_ip="192.168.1.1",
     )
+
+    optional_context = OptionalContext(country="US",
+                                       age=30,
+                                       gender="male",
+                                       city="New York",
+                                       asn=12345,
+                                       region="NY"
+                                       )
 
     user_prompt = "What are some good ways to advertise with AI?"
 
     try:
         # Step 1: Get ad enhancement from Adstract
-        result = client.request_ad(prompt=user_prompt, context=context, raise_exception=True)
+        result = client.request_ad(prompt=user_prompt,
+                                   context=context,
+                                   # optional_context=optional_context,
+                                   raise_exception=True)
 
         if result.success:
             print("✓ Ad enhancement successful")
@@ -52,8 +62,8 @@ def main():
             response = openai_client.responses.create(
                 model="gpt-5-mini",
                 instructions="Always format your responses using clean HTML tags for better readability in chat. "
-                      "Use appropriate tags like <p>, <strong>, <em>, <ul>, <ol>, <li>, <code>, <pre>, "
-                      "etc. Do not include <html>, <head>, or <body> tags - only content tags.",
+                             "Use appropriate tags like <p>, <strong>, <em>, <ul>, <ol>, <li>, <code>, <pre>, "
+                             "etc. Do not include <html>, <head>, or <body> tags - only content tags.",
                 input=result.prompt,
             )
 
@@ -61,7 +71,7 @@ def main():
             print("✓ OpenAI response received")
 
             # Step 3: Report ad acknowledgment to Adstract
-            client.analyse_and_report(enhancement_result=result, llm_response=llm_response)
+            client.acknowledge(enhancement_result=result, llm_response=llm_response)
             print("✓ Ad acknowledgment reported")
 
         else:

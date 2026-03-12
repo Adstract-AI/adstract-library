@@ -8,7 +8,7 @@ AD_ACK_ENDPOINT = "/api/ad-ack/ad-ack/create/"
 
 # Versioning and identification
 SDK_NAME = "adstractai-python"
-SDK_VERSION = "0.3.1"
+SDK_VERSION = "1.0.0"
 TYPE = "sdk"
 
 DEFAULT_TIMEOUT_SECONDS = 100

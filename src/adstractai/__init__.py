@@ -6,6 +6,8 @@ from adstractai.errors import (
     AdSDKError,
     AuthenticationError,
     NetworkError,
+    NoFillError,
+    PromptRejectedError,
     RateLimitError,
     ServerError,
     UnexpectedResponseError,
@@ -18,6 +20,7 @@ from adstractai.models import (
     AdResponse,
     Diagnostics,
     EnhancementResult,
+    OptionalContext,
 )
 
 __all__ = [
@@ -28,10 +31,13 @@ __all__ = [
     "AdResponse",
     "Diagnostics",
     "EnhancementResult",
+    "OptionalContext",
     "AdSDKError",
     "AdEnhancementError",
     "AuthenticationError",
     "NetworkError",
+    "NoFillError",
+    "PromptRejectedError",
     "RateLimitError",
     "ServerError",
     "UnexpectedResponseError",

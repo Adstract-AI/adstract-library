@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any, ClassVar, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from pydantic import ValidationError as PydanticValidationError
@@ -91,14 +91,14 @@ class AdRequestContext(BaseModel):
     Attributes:
         session_id: Session identifier for the request (required)
         user_agent: User agent string from the client browser/application
-        x_forwarded_for: Client IP address for geolocation and analytics
+        user_ip: Client IP address for geolocation and analytics
     """
 
     model_config = ConfigDict(extra="forbid")
 
     session_id: str
     user_agent: str
-    x_forwarded_for: str
+    user_ip: str
 
 
 class RequestConfiguration(BaseModel):
@@ -138,6 +138,66 @@ class RequestConfiguration(BaseModel):
         return value
 
 
+class OptionalContext(BaseModel):
+    """
+    Optional contextual information for ad targeting.
+
+    Contains optional user and geographic context that can improve ad relevance.
+    All fields are optional - provide as much or as little as available.
+
+    Attributes:
+        country: ISO 3166-1 alpha-2 country code (e.g., "US"). Must be exactly
+            2 uppercase ASCII letters when provided.
+        region: Region or state name (e.g., "California")
+        city: City name (e.g., "San Francisco")
+        asn: Autonomous System Number for network identification
+        age: User's age (integer between 0 and 120 inclusive)
+        gender: User's gender ("male", "female", or "other")
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    _MAX_AGE: ClassVar[int] = 120
+    _COUNTRY_CODE_LENGTH: ClassVar[int] = 2
+
+    country: Optional[str] = None
+    region: Optional[str] = None
+    city: Optional[str] = None
+    asn: Optional[int] = None
+    age: Optional[int] = None
+    gender: Optional[str] = None
+
+    @field_validator("age")
+    @classmethod
+    def _validate_age(cls, value: Optional[int]) -> Optional[int]:
+        """Validate age is between 0 and 120 inclusive."""
+        if value is None:
+            return None
+        if not (0 <= value <= cls._MAX_AGE):
+            raise ValueError("age must be an integer between 0 and 120")
+        return value
+
+    @field_validator("gender")
+    @classmethod
+    def _validate_gender(cls, value: Optional[str]) -> Optional[str]:
+        """Validate gender is 'male', 'female', or 'other'."""
+        if value is None:
+            return None
+        if value not in {"male", "female", "other"}:
+            raise ValueError("gender must be 'male', 'female', or 'other'")
+        return value
+
+    @field_validator("country")
+    @classmethod
+    def _validate_country(cls, value: Optional[str]) -> Optional[str]:
+        """Validate country is a valid ISO 3166-1 alpha-2 code (2 uppercase letters)."""
+        if value is None:
+            return None
+        if len(value) != cls._COUNTRY_CODE_LENGTH or not value.isalpha() or not value.isupper():
+            raise ValueError("country must be a valid ISO 3166-1 alpha-2 code (e.g., 'US', 'DE', 'BR')")
+        return value
+
+
 class AdRequest(BaseModel):
     """
     Ad enhancement request payload.
@@ -150,6 +210,7 @@ class AdRequest(BaseModel):
         request_context: Request context with session and client information
         diagnostics: SDK and runtime diagnostic information
         request_configuration: Configuration options for ad processing
+        optional_context: Optional contextual information for ad targeting
 
     Note:
         This model handles validation and serialization of ad enhancement requests.
@@ -161,6 +222,7 @@ class AdRequest(BaseModel):
     request_context: AdRequestContext
     diagnostics: Diagnostics
     request_configuration: Optional[RequestConfiguration] = None
+    optional_context: Optional[OptionalContext] = None
 
     @classmethod
     def from_values(
@@ -170,6 +232,7 @@ class AdRequest(BaseModel):
         request_context: Any,
         diagnostics: Any,
         request_configuration: Any = None,
+        optional_context: Any = None,
     ) -> AdRequest:
         """
         Create AdRequest from raw values with validation.
@@ -179,6 +242,7 @@ class AdRequest(BaseModel):
             request_context: AdRequestContext object with session and client info
             diagnostics: Diagnostics object with SDK information
             request_configuration: Optional RequestConfiguration object with settings
+            optional_context: Optional OptionalContext object with targeting info
 
         Returns:
             AdRequest: Validated AdRequest object
@@ -193,6 +257,7 @@ class AdRequest(BaseModel):
                     "request_context": request_context,
                     "diagnostics": diagnostics,
                     "request_configuration": request_configuration,
+                    "optional_context": optional_context,
                 }
             )
         except PydanticValidationError as exc:
@@ -215,14 +280,15 @@ class AdResponse(BaseModel):
     """
     Response from the ad enhancement API.
 
-    Represents the simplified response structure returned by the ad enhancement API.
+    Represents the response structure returned by the ad enhancement API.
 
     Attributes:
         ad_request_id: Unique identifier of the ad request
         ad_response_id: Unique identifier of the ad response
+        status: Status string from the API (e.g., "ok")
         success: Whether the ad injection pipeline executed successfully
         execution_time_ms: Total execution time of the pipeline in milliseconds
-        prompt: Prompt text containing ad injection instructions (None if unsuccessful)
+        enhanced_prompt: Enhanced prompt text containing ad injection instructions (None if unsuccessful)
         product_name: Name of the advertised product (None if unsuccessful)
 
     Note:
@@ -234,9 +300,10 @@ class AdResponse(BaseModel):
 
     ad_request_id: str
     ad_response_id: str
+    status: Optional[str] = None
     success: bool
     execution_time_ms: float
-    prompt: Optional[str] = None
+    enhanced_prompt: Optional[str] = None
     product_name: Optional[str] = None
 
     @classmethod
@@ -263,9 +330,10 @@ class AdResponse(BaseModel):
                 {
                     "ad_request_id": payload.get("ad_request_id"),
                     "ad_response_id": payload.get("ad_response_id"),
+                    "status": payload.get("status"),
                     "success": payload.get("success"),
                     "execution_time_ms": payload.get("execution_time_ms"),
-                    "prompt": payload.get("prompt"),
+                    "enhanced_prompt": payload.get("enhanced_prompt"),
                     "product_name": payload.get("product_name"),
                 }
             )

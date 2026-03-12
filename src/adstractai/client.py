@@ -33,6 +33,8 @@ from adstractai.errors import (
     AuthenticationError,
     MissingParameterError,
     NetworkError,
+    NoFillError,
+    PromptRejectedError,
     RateLimitError,
     ServerError,
     UnexpectedResponseError,
@@ -45,6 +47,7 @@ from adstractai.models import (
     AdResponse,
     Diagnostics,
     EnhancementResult,
+    OptionalContext,
     RequestConfiguration,
 )
 
@@ -123,13 +126,13 @@ class Adstract:
         if self._owns_async_client:
             await self._async_client.aclose()
 
-    def _validate_required_params(self, user_agent: str, x_forwarded_for: str) -> None:
+    def _validate_required_params(self, user_agent: str, user_ip: str) -> None:
         """
         Validate required parameters for ad requests.
 
         Args:
             user_agent: User agent string from the client
-            x_forwarded_for: X-Forwarded-For header value
+            user_ip: Client IP address
 
         Raises:
             MissingParameterError: If any required parameter is missing or empty
@@ -138,10 +141,10 @@ class Adstract:
             raise MissingParameterError("user_agent parameter is required")
         if user_agent == "":
             raise MissingParameterError("user_agent parameter is required")
-        if not x_forwarded_for:
-            raise MissingParameterError("x_forwarded_for parameter is required")
-        if x_forwarded_for == "":
-            raise MissingParameterError("x_forwarded_for parameter is required")
+        if not user_ip:
+            raise MissingParameterError("user_ip parameter is required")
+        if user_ip == "":
+            raise MissingParameterError("user_ip parameter is required")
 
     def _validate_session_id(self, session_id: Optional[str]) -> str:
         """
@@ -165,13 +168,15 @@ class Adstract:
         *,
         prompt: str,
         config: AdRequestContext,
+        optional_context: Optional[OptionalContext] = None,
     ) -> dict[str, Any]:
         """
         Build the complete ad request payload.
 
         Args:
             prompt: The user's prompt text
-            config: AdRequestContext containing session_id, user_agent, x_forwarded_for
+            config: AdRequestContext containing session_id, user_agent, user_ip
+            optional_context: Optional contextual information for ad targeting
 
         Returns:
             dict: Complete request payload ready to send to API
@@ -179,7 +184,7 @@ class Adstract:
         Raises:
             MissingParameterError: If required parameters are missing
         """
-        self._validate_required_params(config.user_agent, config.x_forwarded_for)
+        self._validate_required_params(config.user_agent, config.user_ip)
         session_id = self._validate_session_id(config.session_id)
 
         # Build diagnostics
@@ -189,7 +194,7 @@ class Adstract:
         request_context = AdRequestContext(
             session_id=session_id,
             user_agent=config.user_agent,
-            x_forwarded_for=config.x_forwarded_for,
+            user_ip=config.user_ip,
         )
 
         # Build request configuration
@@ -200,6 +205,7 @@ class Adstract:
             request_context=request_context,
             diagnostics=diagnostics,
             request_configuration=request_configuration,
+            optional_context=optional_context,
         )
         return request_model.to_payload()
 
@@ -233,11 +239,36 @@ class Adstract:
             error=error,
         )
 
+    @staticmethod
+    def _build_enhancement_error(response: AdResponse) -> AdEnhancementError:
+        """
+        Build the appropriate AdEnhancementError subclass based on the response status.
+
+        Args:
+            response: The AdResponse from the API
+
+        Returns:
+            AdEnhancementError: A specific error subclass based on the status field:
+                - PromptRejectedError for status='rejected'
+                - NoFillError for status='no_fill'
+                - AdEnhancementError for any other unsuccessful status
+        """
+        status = response.status
+
+        if status == "rejected":
+            return PromptRejectedError("Ad enhancement failed: prompt was not suitable for ad injection")
+
+        if status == "no_fill":
+            return NoFillError("Ad enhancement failed: no ad candidates available for this opportunity")
+
+        return AdEnhancementError("Ad enhancement failed: response unsuccessful or missing prompt data")
+
     def request_ad(
         self,
         *,
         prompt: str,
         context: AdRequestContext,
+        optional_context: Optional[OptionalContext] = None,
         raise_exception: bool = True,
     ) -> EnhancementResult:
         """
@@ -251,7 +282,14 @@ class Adstract:
             context: AdRequestContext object containing:
                 - session_id: Session/conversation context (required)
                 - user_agent: Browser user agent string (required)
-                - x_forwarded_for: Client IP address (required)
+                - user_ip: Client IP address (required)
+            optional_context: Optional OptionalContext object containing:
+                - country: ISO country code
+                - region: Region or state name
+                - city: City name
+                - asn: Autonomous System Number
+                - age: User's age
+                - gender: User's gender
             raise_exception: If True (default), raises exceptions on failure.
                            If False, gracefully falls back to original prompt.
 
@@ -269,7 +307,9 @@ class Adstract:
             AuthenticationError: If authentication fails (when raise_exception=True)
             RateLimitError: If rate limited (when raise_exception=True)
             ServerError: If server error occurs (when raise_exception=True)
-            AdEnhancementError: If response is unsuccessful or missing prompt data (when raise_exception=True)
+            PromptRejectedError: If the prompt is not suitable for ad injection (status='rejected')
+            NoFillError: If no ad candidates are available for this opportunity (status='no_fill')
+            AdEnhancementError: If response is unsuccessful for any other reason (when raise_exception=True)
 
         Note:
             When raise_exception=False, all errors are captured in the
@@ -293,6 +333,7 @@ class Adstract:
             payload = self._build_ad_request(
                 prompt=prompt,
                 config=context,
+                optional_context=optional_context,
             )
 
             logger.debug(
@@ -302,20 +343,21 @@ class Adstract:
 
             response = self._send_request(payload)
 
-            # Check if ad request was successful and has prompt data
-            if response.success and response.prompt:
+            # Check if ad request was successful and has enhanced_prompt data
+            if response.success and response.enhanced_prompt:
                 return self._build_ad_enchancment_result(
-                    prompt=response.prompt,
+                    prompt=response.enhanced_prompt,
                     session_id=session_id,
                     ad_response=response,
                     success=True,
                     error=None,
                 )
             else:
-                logger.debug("Ad request not successful or missing prompt data, returning original prompt")
-                error = AdEnhancementError(
-                    "Ad enhancement failed: response unsuccessful or missing prompt data"
+                logger.debug(
+                    "Ad request not successful (status=%s), returning original prompt",
+                    response.status,
                 )
+                error = self._build_enhancement_error(response)
                 if raise_exception:
                     raise error
                 return self._build_ad_enchancment_result(
@@ -345,6 +387,7 @@ class Adstract:
         *,
         prompt: str,
         context: AdRequestContext,
+        optional_context: Optional[OptionalContext] = None,
         raise_exception: bool = True,
     ) -> EnhancementResult:
         """
@@ -361,7 +404,14 @@ class Adstract:
             context: AdRequestContext object containing:
                 - session_id: Session/conversation context (required)
                 - user_agent: Browser user agent string (required)
-                - x_forwarded_for: Client IP address (required)
+                - user_ip: Client IP address (required)
+            optional_context: Optional OptionalContext object containing:
+                - country: ISO country code
+                - region: Region or state name
+                - city: City name
+                - asn: Autonomous System Number
+                - age: User's age
+                - gender: User's gender
             raise_exception: If True (default), raises exceptions on failure.
                            If False, gracefully falls back to original prompt.
 
@@ -379,7 +429,9 @@ class Adstract:
             AuthenticationError: If authentication fails (when raise_exception=True)
             RateLimitError: If rate limited (when raise_exception=True)
             ServerError: If server error occurs (when raise_exception=True)
-            AdEnhancementError: If response is unsuccessful or missing prompt data (when raise_exception=True)
+            PromptRejectedError: If the prompt is not suitable for ad injection (status='rejected')
+            NoFillError: If no ad candidates are available for this opportunity (status='no_fill')
+            AdEnhancementError: If response is unsuccessful for any other reason (when raise_exception=True)
 
         Note:
             When raise_exception=False, all errors are captured in the
@@ -403,6 +455,7 @@ class Adstract:
             payload = self._build_ad_request(
                 prompt=prompt,
                 config=context,
+                optional_context=optional_context,
             )
 
             logger.debug(
@@ -412,20 +465,21 @@ class Adstract:
 
             response = await self._send_request_async(payload)
 
-            # Check if ad request was successful and has prompt data
-            if response.success and response.prompt:
+            # Check if ad request was successful and has enhanced_prompt data
+            if response.success and response.enhanced_prompt:
                 return self._build_ad_enchancment_result(
-                    prompt=response.prompt,
+                    prompt=response.enhanced_prompt,
                     session_id=session_id,
                     ad_response=response,
                     success=True,
                     error=None,
                 )
             else:
-                logger.debug("Ad request not successful or missing prompt data, returning original prompt")
-                error = AdEnhancementError(
-                    "Ad enhancement failed: response unsuccessful or missing prompt data"
+                logger.debug(
+                    "Ad request not successful (status=%s), returning original prompt",
+                    response.status,
                 )
+                error = self._build_enhancement_error(response)
                 if raise_exception:
                     raise error
                 return self._build_ad_enchancment_result(
@@ -648,7 +702,7 @@ class Adstract:
             API_KEY_HEADER_NAME: self._api_key,
         }
 
-    def analyse_and_report(
+    def acknowledge(
         self,
         *,
         enhancement_result: EnhancementResult,
@@ -693,7 +747,7 @@ class Adstract:
                 raise
             logger.error("Failed to send ad acknowledgment", exc_info=exc)
 
-    async def analyse_and_report_async(
+    async def acknowledge_async(
         self,
         *,
         enhancement_result: EnhancementResult,
@@ -701,7 +755,7 @@ class Adstract:
         raise_exception: bool = True,
     ) -> None:
         """
-        Async version of analyse_and_report with configurable error handling.
+        Async version of acknowledge with configurable error handling.
         Report ad acknowledgment to the backend asynchronously.
         Only reports if the enhancement was successful (ad was injected).
 
