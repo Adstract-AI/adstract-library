@@ -16,8 +16,11 @@ from adstractai.constants import (
     SDK_VERSION_HEADER_NAME,
 )
 from adstractai.errors import (
+    AdEnhancementError,
     AuthenticationError,
     MissingParameterError,
+    NoFillError,
+    PromptRejectedError,
     RateLimitError,
     ServerError,
     ValidationError,
@@ -173,6 +176,221 @@ def test_server_error_mapping() -> None:
     # request_ad returns a result with error instead of raising
     assert result.success is False
     assert isinstance(result.error, ServerError)
+
+
+# ============================================================================
+# Tests for status-based error mapping (rejected, no_fill, unknown)
+# ============================================================================
+
+
+def _failure_response(status: str, **overrides: object) -> dict:
+    """Build a non-successful API response with the given status."""
+    base = {
+        "ad_request_id": "fail-req-id",
+        "ad_response_id": "fail-resp-id",
+        "status": status,
+        "success": False,
+        "execution_time_ms": 50.0,
+        "product_name": "Test Product",
+    }
+    base.update(overrides)
+    return base
+
+
+def test_status_rejected_no_raise() -> None:
+    """status='rejected' with raise_exception=False returns PromptRejectedError in result."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=_failure_response("rejected"))
+
+    transport = httpx.MockTransport(handler)
+    client = Adstract(
+        api_key=API_KEY,
+        http_client=httpx.Client(transport=transport),
+    )
+
+    result = client.request_ad(prompt=_valid_prompt(), context=_valid_config(), raise_exception=False)
+    assert result.success is False
+    assert isinstance(result.error, PromptRejectedError)
+    assert isinstance(result.error, AdEnhancementError)
+    assert result.prompt == _valid_prompt()  # original prompt returned
+
+
+def test_status_rejected_raises() -> None:
+    """status='rejected' with raise_exception=True raises PromptRejectedError."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=_failure_response("rejected"))
+
+    transport = httpx.MockTransport(handler)
+    client = Adstract(
+        api_key=API_KEY,
+        http_client=httpx.Client(transport=transport),
+    )
+
+    with pytest.raises(PromptRejectedError):
+        client.request_ad(prompt=_valid_prompt(), context=_valid_config(), raise_exception=True)
+
+
+def test_status_no_fill_no_raise() -> None:
+    """status='no_fill' with raise_exception=False returns NoFillError in result."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=_failure_response("no_fill"))
+
+    transport = httpx.MockTransport(handler)
+    client = Adstract(
+        api_key=API_KEY,
+        http_client=httpx.Client(transport=transport),
+    )
+
+    result = client.request_ad(prompt=_valid_prompt(), context=_valid_config(), raise_exception=False)
+    assert result.success is False
+    assert isinstance(result.error, NoFillError)
+    assert isinstance(result.error, AdEnhancementError)
+    assert result.prompt == _valid_prompt()
+
+
+def test_status_no_fill_raises() -> None:
+    """status='no_fill' with raise_exception=True raises NoFillError."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=_failure_response("no_fill"))
+
+    transport = httpx.MockTransport(handler)
+    client = Adstract(
+        api_key=API_KEY,
+        http_client=httpx.Client(transport=transport),
+    )
+
+    with pytest.raises(NoFillError):
+        client.request_ad(prompt=_valid_prompt(), context=_valid_config(), raise_exception=True)
+
+
+def test_status_unknown_failure_no_raise() -> None:
+    """Unknown failure status returns generic AdEnhancementError."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=_failure_response("some_unknown_status"))
+
+    transport = httpx.MockTransport(handler)
+    client = Adstract(
+        api_key=API_KEY,
+        http_client=httpx.Client(transport=transport),
+    )
+
+    result = client.request_ad(prompt=_valid_prompt(), context=_valid_config(), raise_exception=False)
+    assert result.success is False
+    assert isinstance(result.error, AdEnhancementError)
+    # Should NOT be a specific subclass
+    assert type(result.error) is AdEnhancementError
+    assert result.prompt == _valid_prompt()
+
+
+def test_status_unknown_failure_raises() -> None:
+    """Unknown failure status with raise_exception=True raises AdEnhancementError."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=_failure_response("some_unknown_status"))
+
+    transport = httpx.MockTransport(handler)
+    client = Adstract(
+        api_key=API_KEY,
+        http_client=httpx.Client(transport=transport),
+    )
+
+    with pytest.raises(AdEnhancementError):
+        client.request_ad(prompt=_valid_prompt(), context=_valid_config(), raise_exception=True)
+
+
+def test_status_rejected_async() -> None:
+    """Async: status='rejected' returns PromptRejectedError."""
+
+    async def run_test() -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, json=_failure_response("rejected"))
+
+        transport = httpx.MockTransport(handler)
+        async_client = httpx.AsyncClient(transport=transport)
+        client = Adstract(api_key=API_KEY, async_http_client=async_client)
+
+        # raise_exception=False
+        result = await client.request_ad_async(
+            prompt=_valid_prompt(), context=_valid_config(), raise_exception=False
+        )
+        assert result.success is False
+        assert isinstance(result.error, PromptRejectedError)
+        assert isinstance(result.error, AdEnhancementError)
+        assert result.prompt == _valid_prompt()
+
+        # raise_exception=True
+        with pytest.raises(PromptRejectedError):
+            await client.request_ad_async(
+                prompt=_valid_prompt(), context=_valid_config(), raise_exception=True
+            )
+
+        await client.aclose()
+
+    asyncio.run(run_test())
+
+
+def test_status_no_fill_async() -> None:
+    """Async: status='no_fill' returns NoFillError."""
+
+    async def run_test() -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, json=_failure_response("no_fill"))
+
+        transport = httpx.MockTransport(handler)
+        async_client = httpx.AsyncClient(transport=transport)
+        client = Adstract(api_key=API_KEY, async_http_client=async_client)
+
+        # raise_exception=False
+        result = await client.request_ad_async(
+            prompt=_valid_prompt(), context=_valid_config(), raise_exception=False
+        )
+        assert result.success is False
+        assert isinstance(result.error, NoFillError)
+        assert isinstance(result.error, AdEnhancementError)
+        assert result.prompt == _valid_prompt()
+
+        # raise_exception=True
+        with pytest.raises(NoFillError):
+            await client.request_ad_async(
+                prompt=_valid_prompt(), context=_valid_config(), raise_exception=True
+            )
+
+        await client.aclose()
+
+    asyncio.run(run_test())
+
+
+def test_status_unknown_failure_async() -> None:
+    """Async: unknown failure status returns generic AdEnhancementError."""
+
+    async def run_test() -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, json=_failure_response("some_unknown_status"))
+
+        transport = httpx.MockTransport(handler)
+        async_client = httpx.AsyncClient(transport=transport)
+        client = Adstract(api_key=API_KEY, async_http_client=async_client)
+
+        result = await client.request_ad_async(
+            prompt=_valid_prompt(), context=_valid_config(), raise_exception=False
+        )
+        assert result.success is False
+        assert isinstance(result.error, AdEnhancementError)
+        assert type(result.error) is AdEnhancementError
+
+        with pytest.raises(AdEnhancementError):
+            await client.request_ad_async(
+                prompt=_valid_prompt(), context=_valid_config(), raise_exception=True
+            )
+
+        await client.aclose()
+
+    asyncio.run(run_test())
 
 
 def test_retry_then_success() -> None:
@@ -539,7 +757,7 @@ def test_optional_context_valid_country(country: str) -> None:
 
 
 # ============================================================================
-# Tests for analyse_and_report function
+# Tests for acknowledge function
 # ============================================================================
 
 
@@ -565,8 +783,8 @@ def _create_mock_enhancement_result(
     )
 
 
-def test_analyse_and_report_skips_when_not_successful() -> None:
-    """Test that analyse_and_report does nothing when enhancement was not successful."""
+def test_acknowledge_skips_when_not_successful() -> None:
+    """Test that acknowledge does nothing when enhancement was not successful."""
     captured = {"called": False}
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -589,7 +807,7 @@ def test_analyse_and_report_skips_when_not_successful() -> None:
     )
 
     # Should not call the backend
-    client.analyse_and_report(
+    client.acknowledge(
         enhancement_result=enhancement_result,
         llm_response="Some LLM response",
     )
@@ -597,8 +815,8 @@ def test_analyse_and_report_skips_when_not_successful() -> None:
     assert captured["called"] is False
 
 
-def test_analyse_and_report_sends_ad_ack_to_backend() -> None:
-    """Test that analyse_and_report sends AdAck to the backend."""
+def test_acknowledge_sends_ad_ack_to_backend() -> None:
+    """Test that acknowledge sends AdAck to the backend."""
     captured = {"payload": None, "url": None}
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -617,7 +835,7 @@ def test_analyse_and_report_sends_ad_ack_to_backend() -> None:
     enhancement_result = _create_mock_enhancement_result()
     llm_response = "This is the LLM response with <ADS>Ad content track-id-123</ADS> embedded."
 
-    client.analyse_and_report(
+    client.acknowledge(
         enhancement_result=enhancement_result,
         llm_response=llm_response,
     )
@@ -636,7 +854,7 @@ def test_analyse_and_report_sends_ad_ack_to_backend() -> None:
     assert "error_tracking" not in captured["payload"]
 
 
-def test_analyse_and_report_diagnostics() -> None:
+def test_acknowledge_diagnostics() -> None:
     """Test diagnostics fields in AdAck."""
     captured = {"payload": None}
 
@@ -654,7 +872,7 @@ def test_analyse_and_report_diagnostics() -> None:
     enhancement_result = _create_mock_enhancement_result()
     llm_response = "Response <ADS>Ad track-id-123</ADS>"
 
-    client.analyse_and_report(
+    client.acknowledge(
         enhancement_result=enhancement_result,
         llm_response=llm_response,
     )
@@ -665,8 +883,8 @@ def test_analyse_and_report_diagnostics() -> None:
     assert "version" in diagnostics
 
 
-def test_analyse_and_report_async() -> None:
-    """Test async version of analyse_and_report."""
+def test_acknowledge_async() -> None:
+    """Test async version of acknowledge."""
 
     async def run_test() -> None:
         captured = {"payload": None}
@@ -686,7 +904,7 @@ def test_analyse_and_report_async() -> None:
         enhancement_result = _create_mock_enhancement_result()
         llm_response = "Response <ADS>Ad track-id-123</ADS>"
 
-        await client.analyse_and_report_async(
+        await client.acknowledge_async(
             enhancement_result=enhancement_result,
             llm_response=llm_response,
         )

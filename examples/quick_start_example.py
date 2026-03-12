@@ -46,7 +46,7 @@ def main():
         # Step 1: Get ad enhancement from Adstract
         result = client.request_ad(prompt=user_prompt,
                                    context=context,
-                                   optional_context=optional_context,
+                                   # optional_context=optional_context,
                                    raise_exception=True)
 
         if result.success:
@@ -71,7 +71,7 @@ def main():
             print("✓ OpenAI response received")
 
             # Step 3: Report ad acknowledgment to Adstract
-            client.analyse_and_report(enhancement_result=result, llm_response=llm_response)
+            client.acknowledge(enhancement_result=result, llm_response=llm_response)
             print("✓ Ad acknowledgment reported")
 
         else:

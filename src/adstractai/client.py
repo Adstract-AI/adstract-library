@@ -33,6 +33,8 @@ from adstractai.errors import (
     AuthenticationError,
     MissingParameterError,
     NetworkError,
+    NoFillError,
+    PromptRejectedError,
     RateLimitError,
     ServerError,
     UnexpectedResponseError,
@@ -237,6 +239,30 @@ class Adstract:
             error=error,
         )
 
+    @staticmethod
+    def _build_enhancement_error(response: AdResponse) -> AdEnhancementError:
+        """
+        Build the appropriate AdEnhancementError subclass based on the response status.
+
+        Args:
+            response: The AdResponse from the API
+
+        Returns:
+            AdEnhancementError: A specific error subclass based on the status field:
+                - PromptRejectedError for status='rejected'
+                - NoFillError for status='no_fill'
+                - AdEnhancementError for any other unsuccessful status
+        """
+        status = response.status
+
+        if status == "rejected":
+            return PromptRejectedError("Ad enhancement failed: prompt was not suitable for ad injection")
+
+        if status == "no_fill":
+            return NoFillError("Ad enhancement failed: no ad candidates available for this opportunity")
+
+        return AdEnhancementError("Ad enhancement failed: response unsuccessful or missing prompt data")
+
     def request_ad(
         self,
         *,
@@ -281,7 +307,9 @@ class Adstract:
             AuthenticationError: If authentication fails (when raise_exception=True)
             RateLimitError: If rate limited (when raise_exception=True)
             ServerError: If server error occurs (when raise_exception=True)
-            AdEnhancementError: If response is unsuccessful or missing prompt data (when raise_exception=True)
+            PromptRejectedError: If the prompt is not suitable for ad injection (status='rejected')
+            NoFillError: If no ad candidates are available for this opportunity (status='no_fill')
+            AdEnhancementError: If response is unsuccessful for any other reason (when raise_exception=True)
 
         Note:
             When raise_exception=False, all errors are captured in the
@@ -325,10 +353,11 @@ class Adstract:
                     error=None,
                 )
             else:
-                logger.debug("Ad request not successful or missing enhanced_prompt data, returning original prompt")
-                error = AdEnhancementError(
-                    "Ad enhancement failed: response unsuccessful or missing prompt data"
+                logger.debug(
+                    "Ad request not successful (status=%s), returning original prompt",
+                    response.status,
                 )
+                error = self._build_enhancement_error(response)
                 if raise_exception:
                     raise error
                 return self._build_ad_enchancment_result(
@@ -400,7 +429,9 @@ class Adstract:
             AuthenticationError: If authentication fails (when raise_exception=True)
             RateLimitError: If rate limited (when raise_exception=True)
             ServerError: If server error occurs (when raise_exception=True)
-            AdEnhancementError: If response is unsuccessful or missing prompt data (when raise_exception=True)
+            PromptRejectedError: If the prompt is not suitable for ad injection (status='rejected')
+            NoFillError: If no ad candidates are available for this opportunity (status='no_fill')
+            AdEnhancementError: If response is unsuccessful for any other reason (when raise_exception=True)
 
         Note:
             When raise_exception=False, all errors are captured in the
@@ -444,10 +475,11 @@ class Adstract:
                     error=None,
                 )
             else:
-                logger.debug("Ad request not successful or missing enhanced_prompt data, returning original prompt")
-                error = AdEnhancementError(
-                    "Ad enhancement failed: response unsuccessful or missing prompt data"
+                logger.debug(
+                    "Ad request not successful (status=%s), returning original prompt",
+                    response.status,
                 )
+                error = self._build_enhancement_error(response)
                 if raise_exception:
                     raise error
                 return self._build_ad_enchancment_result(
@@ -670,7 +702,7 @@ class Adstract:
             API_KEY_HEADER_NAME: self._api_key,
         }
 
-    def analyse_and_report(
+    def acknowledge(
         self,
         *,
         enhancement_result: EnhancementResult,
@@ -715,7 +747,7 @@ class Adstract:
                 raise
             logger.error("Failed to send ad acknowledgment", exc_info=exc)
 
-    async def analyse_and_report_async(
+    async def acknowledge_async(
         self,
         *,
         enhancement_result: EnhancementResult,
@@ -723,7 +755,7 @@ class Adstract:
         raise_exception: bool = True,
     ) -> None:
         """
-        Async version of analyse_and_report with configurable error handling.
+        Async version of acknowledge with configurable error handling.
         Report ad acknowledgment to the backend asynchronously.
         Only reports if the enhancement was successful (ad was injected).
 

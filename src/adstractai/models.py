@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any, ClassVar, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from pydantic import ValidationError as PydanticValidationError
@@ -157,6 +157,9 @@ class OptionalContext(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+    _MAX_AGE: ClassVar[int] = 120
+    _COUNTRY_CODE_LENGTH: ClassVar[int] = 2
+
     country: Optional[str] = None
     region: Optional[str] = None
     city: Optional[str] = None
@@ -170,7 +173,7 @@ class OptionalContext(BaseModel):
         """Validate age is between 0 and 120 inclusive."""
         if value is None:
             return None
-        if not (0 <= value <= 120):
+        if not (0 <= value <= cls._MAX_AGE):
             raise ValueError("age must be an integer between 0 and 120")
         return value
 
@@ -190,10 +193,8 @@ class OptionalContext(BaseModel):
         """Validate country is a valid ISO 3166-1 alpha-2 code (2 uppercase letters)."""
         if value is None:
             return None
-        if len(value) != 2 or not value.isalpha() or not value.isupper():
-            raise ValueError(
-                "country must be a valid ISO 3166-1 alpha-2 code (e.g., 'US', 'DE', 'BR')"
-            )
+        if len(value) != cls._COUNTRY_CODE_LENGTH or not value.isalpha() or not value.isupper():
+            raise ValueError("country must be a valid ISO 3166-1 alpha-2 code (e.g., 'US', 'DE', 'BR')")
         return value
 
 
