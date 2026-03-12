@@ -18,6 +18,7 @@ from adstractai.models import (
     AdResponse,
     Diagnostics,
     EnhancementResult,
+    OptionalContext,
 )
 
 __all__ = [
@@ -28,6 +29,7 @@ __all__ = [
     "AdResponse",
     "Diagnostics",
     "EnhancementResult",
+    "OptionalContext",
     "AdSDKError",
     "AdEnhancementError",
     "AuthenticationError",
