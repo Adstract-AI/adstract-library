@@ -58,7 +58,7 @@ This project follows `MAJOR.MINOR.PATCH`:
 2. Bump version in `src/adstractai/constants.py` (`SDK_VERSION`).
 3. Update `CHANGELOG.md` with the release notes.
 4. Commit release changes.
-5. Create release tag: `git tag vX.Y.Z`.
+5. Create release tag: `git tag vX.Y.Z` (`git tag -d vX.Y.Z` to delate a tag).
 6. Push your task branch: `git push origin task/ADS-<number>/<task-name>`.
 7. Push only the new release tag: `git push origin vX.Y.Z`.
 

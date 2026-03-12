@@ -52,3 +52,19 @@ class UnexpectedResponseError(AdSDKError):
 
 class AdEnhancementError(AdSDKError):
     """Raised when ad enhancement fails."""
+
+
+class PromptRejectedError(AdEnhancementError):
+    """Raised when the prompt is not suitable for ad injection (status='rejected').
+
+    This indicates the ad system determined the prompt content is not
+    appropriate for advertisement placement.
+    """
+
+
+class NoFillError(AdEnhancementError):
+    """Raised when no ad candidates are available for the opportunity (status='no_fill').
+
+    This indicates the prompt was suitable for ad injection, but no matching
+    ad inventory was available to fill the opportunity.
+    """

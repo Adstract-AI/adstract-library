@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.0 - 2026-03-12
+
+### Breaking Changes
+
+- Renamed `AdRequestContext.x_forwarded_for` to `AdRequestContext.user_ip` to match the updated API interface.
+- Renamed `AdResponse.prompt` to `AdResponse.enhanced_prompt` to match the updated API response structure.
+- Renamed `analyse_and_report` to `acknowledge` and `analyse_and_report_async` to `acknowledge_async`.
+- `AdRequest.from_values()` now accepts an optional `optional_context` parameter.
+- `request_ad` and `request_ad_async` now accept an optional `optional_context` keyword argument.
+
+### Added
+
+- New `OptionalContext` model for optional ad targeting context (country, region, city, asn, age, gender).
+- New `status` field on `AdResponse` (e.g., `"ok"`).
+- `OptionalContext` is now exported from the `adstractai` package.
+
 ## 0.3.1 - 2026-02-21
 
 ### Added
