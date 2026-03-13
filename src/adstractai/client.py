@@ -304,7 +304,9 @@ class Adstract:
         Raises:
             MissingParameterError: If required parameters are missing (when raise_exception=True)
             NetworkError: If network request fails (when raise_exception=True)
-            AuthenticationError: If authentication fails (when raise_exception=True)
+            AuthenticationError: If authentication fails — 400 (bad key format),
+                401 (key not recognized), or 403 (account/platform not active or
+                unverified publisher using billing key) (when raise_exception=True)
             RateLimitError: If rate limited (when raise_exception=True)
             ServerError: If server error occurs (when raise_exception=True)
             PromptRejectedError: If the prompt is not suitable for ad injection (status='rejected')
@@ -426,7 +428,9 @@ class Adstract:
         Raises:
             MissingParameterError: If required parameters are missing (when raise_exception=True)
             NetworkError: If network request fails (when raise_exception=True)
-            AuthenticationError: If authentication fails (when raise_exception=True)
+            AuthenticationError: If authentication fails — 400 (bad key format),
+                401 (key not recognized), or 403 (account/platform not active or
+                unverified publisher using billing key) (when raise_exception=True)
             RateLimitError: If rate limited (when raise_exception=True)
             ServerError: If server error occurs (when raise_exception=True)
             PromptRejectedError: If the prompt is not suitable for ad injection (status='rejected')
@@ -634,13 +638,25 @@ class Adstract:
             AdResponse: Parsed and validated AdResponse object
 
         Raises:
-            AuthenticationError: If authentication failed (401, 403)
+            AuthenticationError: If authentication failed (400, 401, 403)
             UnexpectedResponseError: If client error or invalid JSON/structure
         """
         status = response.status_code
-        if status in {401, 403}:
+        if status == 400:
             raise AuthenticationError(
-                "Authentication failed",
+                "API key format is invalid",
+                status_code=status,
+                response_snippet=_snippet(response),
+            )
+        if status == 401:
+            raise AuthenticationError(
+                "API key not recognized: no platform is registered to this key",
+                status_code=status,
+                response_snippet=_snippet(response),
+            )
+        if status == 403:
+            raise AuthenticationError(
+                "Access denied: platform or publisher account is not active, or an unverified publisher is using a billing key",
                 status_code=status,
                 response_snippet=_snippet(response),
             )
@@ -839,12 +855,16 @@ class Adstract:
         """
         Send AdAck payload to the backend synchronously.
 
-        Sends the ad acknowledgment data to the backend API. This method logs
-        warnings for failed requests but does not raise exceptions to ensure
-        that ad acknowledgment failures don't disrupt the main application flow.
-
         Args:
             ad_ack: Complete ad acknowledgment payload to send
+
+        Raises:
+            AuthenticationError: If API key is invalid or account is not active (400, 401, 403)
+            UnexpectedResponseError: If ad_response_id is not found (404), does not belong
+                to this platform (403 on ack), was not a successful ad response (400 on ack),
+                or was already acknowledged (409)
+            ServerError: If a 5xx error occurs — acknowledgment outcome is unknown.
+                Stop Adstract services if this occurs; prior traffic remains safe.
         """
         url = self._ad_ack_endpoint()
         headers = self._build_headers()
@@ -854,25 +874,75 @@ class Adstract:
 
         try:
             response = self._client.post(url, json=payload, headers=headers, timeout=self._timeout)
+        except (httpx.TimeoutException, httpx.TransportError) as exc:
+            raise NetworkError("Network error during acknowledgment", original_error=exc) from exc
 
-            if response.status_code not in {200, 201}:
-                logger.warning(
-                    "Ad acknowledgment failed",
-                    extra={"status_code": response.status_code, "response": _snippet(response)},
-                )
-        except Exception as exc:
-            logger.error("Failed to send ad acknowledgment", exc_info=exc)
+        status = response.status_code
+
+        if status in {200, 201}:
+            return
+
+        if status == 400:
+            raise AuthenticationError(
+                "Acknowledgment failed: API key format is invalid, "
+                "or the ad response was not a successful enhancement",
+                status_code=status,
+                response_snippet=_snippet(response),
+            )
+        if status == 401:
+            raise AuthenticationError(
+                "API key not recognized: no platform is registered to this key",
+                status_code=status,
+                response_snippet=_snippet(response),
+            )
+        if status == 403:
+            raise AuthenticationError(
+                "Access denied: platform or publisher account is not active, "
+                "or the ad response does not belong to this platform",
+                status_code=status,
+                response_snippet=_snippet(response),
+            )
+        if status == 404:
+            raise UnexpectedResponseError(
+                "Acknowledgment failed: ad_response_id not found",
+                status_code=status,
+                response_snippet=_snippet(response),
+            )
+        if status == 409:
+            raise UnexpectedResponseError(
+                "Acknowledgment failed: this ad response has already been acknowledged",
+                status_code=status,
+                response_snippet=_snippet(response),
+            )
+        if SERVER_ERROR_MIN <= status <= SERVER_ERROR_MAX:
+            raise ServerError(
+                "Acknowledgment failed with a server error: outcome is unknown. "
+                "Stop Adstract services until this is resolved. Prior traffic is unaffected.",
+                status_code=status,
+                response_snippet=_snippet(response),
+            )
+
+        logger.warning(
+            "Ad acknowledgment returned unexpected status",
+            extra={"status_code": status, "response": _snippet(response)},
+        )
 
     async def _send_ad_ack_async(self, ad_ack: AdAck) -> None:
         """
         Send AdAck payload to the backend asynchronously.
 
-        Async version of _send_ad_ack. Sends the ad acknowledgment data to the
-        backend API asynchronously. This method logs warnings for failed requests
-        but does not raise exceptions to ensure reliability.
+        Async version of _send_ad_ack.
 
         Args:
             ad_ack: Complete ad acknowledgment payload to send
+
+        Raises:
+            AuthenticationError: If API key is invalid or account is not active (400, 401, 403)
+            UnexpectedResponseError: If ad_response_id is not found (404), does not belong
+                to this platform (403 on ack), was not a successful ad response (400 on ack),
+                or was already acknowledged (409)
+            ServerError: If a 5xx error occurs — acknowledgment outcome is unknown.
+                Stop Adstract services if this occurs; prior traffic remains safe.
         """
         url = self._ad_ack_endpoint()
         headers = self._build_headers()
@@ -884,14 +954,58 @@ class Adstract:
             response = await self._async_client.post(
                 url, json=payload, headers=headers, timeout=self._timeout
             )
+        except (httpx.TimeoutException, httpx.TransportError) as exc:
+            raise NetworkError("Network error during acknowledgment", original_error=exc) from exc
 
-            if response.status_code not in {200, 201}:
-                logger.warning(
-                    "Ad acknowledgment failed",
-                    extra={"status_code": response.status_code, "response": _snippet(response)},
-                )
-        except Exception as exc:
-            logger.error("Failed to send ad acknowledgment", exc_info=exc)
+        status = response.status_code
+
+        if status in {200, 201}:
+            return
+
+        if status == 400:
+            raise AuthenticationError(
+                "Acknowledgment failed: API key format is invalid, "
+                "or the ad response was not a successful enhancement",
+                status_code=status,
+                response_snippet=_snippet(response),
+            )
+        if status == 401:
+            raise AuthenticationError(
+                "API key not recognized: no platform is registered to this key",
+                status_code=status,
+                response_snippet=_snippet(response),
+            )
+        if status == 403:
+            raise AuthenticationError(
+                "Access denied: platform or publisher account is not active, "
+                "or the ad response does not belong to this platform",
+                status_code=status,
+                response_snippet=_snippet(response),
+            )
+        if status == 404:
+            raise UnexpectedResponseError(
+                "Acknowledgment failed: ad_response_id not found",
+                status_code=status,
+                response_snippet=_snippet(response),
+            )
+        if status == 409:
+            raise UnexpectedResponseError(
+                "Acknowledgment failed: this ad response has already been acknowledged",
+                status_code=status,
+                response_snippet=_snippet(response),
+            )
+        if SERVER_ERROR_MIN <= status <= SERVER_ERROR_MAX:
+            raise ServerError(
+                "Acknowledgment failed with a server error: outcome is unknown. "
+                "Stop Adstract services until this is resolved. Prior traffic is unaffected.",
+                status_code=status,
+                response_snippet=_snippet(response),
+            )
+
+        logger.warning(
+            "Ad acknowledgment returned unexpected status",
+            extra={"status_code": status, "response": _snippet(response)},
+        )
 
 
 def _snippet(response: httpx.Response, limit: int = 200) -> Optional[str]:
