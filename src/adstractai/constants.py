@@ -4,11 +4,11 @@ import os
 
 BASE_URL = os.getenv("ADSTRACT_DEBUG_URL", "https://api.adstract.ai")
 AD_INJECTION_ENDPOINT = "/api/ad-injection/start/"
-AD_ACK_ENDPOINT = "/api/ad-ack/ad-ack/create/"
+AD_ACK_ENDPOINT = "/api/ad-injection/acknowledge/"
 
 # Versioning and identification
 SDK_NAME = "adstractai-python"
-SDK_VERSION = "1.0.0"
+SDK_VERSION = "1.0.1"
 TYPE = "sdk"
 
 DEFAULT_TIMEOUT_SECONDS = 100
