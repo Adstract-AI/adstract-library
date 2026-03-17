@@ -29,8 +29,8 @@ from adstractai.constants import (
 )
 from adstractai.errors import (
     AdEnhancementError,
-    AdSDKError,
     AdResponseNotFoundError,
+    AdSDKError,
     AuthenticationError,
     DuplicateAcknowledgmentError,
     DuplicateAdRequestError,
@@ -40,8 +40,8 @@ from adstractai.errors import (
     PromptRejectedError,
     RateLimitError,
     ServerError,
-    UnsuccessfulAdResponseError,
     UnexpectedResponseError,
+    UnsuccessfulAdResponseError,
     ValidationError,
 )
 from adstractai.models import (
@@ -60,6 +60,15 @@ logger = logging.getLogger(__name__)
 
 MIN_API_KEY_LENGTH = 10
 MIN_USER_AGENT_LENGTH = 10
+HTTP_200_OK = 200
+HTTP_201_CREATED = 201
+HTTP_202_ACCEPTED = 202
+HTTP_400_BAD_REQUEST = 400
+HTTP_401_UNAUTHORIZED = 401
+HTTP_403_FORBIDDEN = 403
+HTTP_404_NOT_FOUND = 404
+HTTP_406_NOT_ACCEPTABLE = 406
+HTTP_409_CONFLICT = 409
 RATE_LIMIT_STATUS = 429
 SERVER_ERROR_MIN = 500
 SERVER_ERROR_MAX = 599
@@ -73,17 +82,17 @@ class Adstract:
     # Client setup and transport ownership.
 
     def __init__(
-            self,
-            *,
-            api_key: Optional[str] = None,
-            base_url: Optional[str] = None,
-            timeout: float = DEFAULT_TIMEOUT_SECONDS,
-            retries: int = DEFAULT_RETRIES,
-            backoff_factor: float = 0.5,
-            max_backoff: float = 8.0,
-            http_client: Optional[httpx.Client] = None,
-            async_http_client: Optional[httpx.AsyncClient] = None,
-            wrapping_type: Optional[Literal["xml", "plain", "markdown"]] = None,
+        self,
+        *,
+        api_key: Optional[str] = None,
+        base_url: Optional[str] = None,
+        timeout: float = DEFAULT_TIMEOUT_SECONDS,
+        retries: int = DEFAULT_RETRIES,
+        backoff_factor: float = 0.5,
+        max_backoff: float = 8.0,
+        http_client: Optional[httpx.Client] = None,
+        async_http_client: Optional[httpx.AsyncClient] = None,
+        wrapping_type: Optional[Literal["xml", "plain", "markdown"]] = None,
     ) -> None:
         """
         Initialize the Adstract client.
@@ -164,7 +173,7 @@ class Adstract:
         Args:
             attempt: Current attempt number (0-based)
         """
-        delay = min(self._backoff_factor * (2 ** attempt), self._max_backoff)
+        delay = min(self._backoff_factor * (2**attempt), self._max_backoff)
         time.sleep(delay)
 
     async def _sleep_backoff_async(self, attempt: int) -> None:
@@ -174,7 +183,7 @@ class Adstract:
         Args:
             attempt: Current attempt number (0-based)
         """
-        delay = min(self._backoff_factor * (2 ** attempt), self._max_backoff)
+        delay = min(self._backoff_factor * (2**attempt), self._max_backoff)
         await asyncio.sleep(delay)
 
     def close(self) -> None:
@@ -227,11 +236,11 @@ class Adstract:
         return session_id
 
     def _build_ad_request(
-            self,
-            *,
-            prompt: str,
-            config: AdRequestContext,
-            optional_context: Optional[OptionalContext] = None,
+        self,
+        *,
+        prompt: str,
+        config: AdRequestContext,
+        optional_context: Optional[OptionalContext] = None,
     ) -> dict[str, Any]:
         """
         Build the complete ad request payload.
@@ -275,12 +284,12 @@ class Adstract:
     # Enhancement entry points.
 
     def request_ad(
-            self,
-            *,
-            prompt: str,
-            context: AdRequestContext,
-            optional_context: Optional[OptionalContext] = None,
-            raise_exception: bool = True,
+        self,
+        *,
+        prompt: str,
+        context: AdRequestContext,
+        optional_context: Optional[OptionalContext] = None,
+        raise_exception: bool = True,
     ) -> EnhancementResult:
         """
         Request ad enhancement with configurable error handling.
@@ -397,12 +406,12 @@ class Adstract:
             )
 
     async def request_ad_async(
-            self,
-            *,
-            prompt: str,
-            context: AdRequestContext,
-            optional_context: Optional[OptionalContext] = None,
-            raise_exception: bool = True,
+        self,
+        *,
+        prompt: str,
+        context: AdRequestContext,
+        optional_context: Optional[OptionalContext] = None,
+        raise_exception: bool = True,
     ) -> EnhancementResult:
         """
         Asynchronously request ad enhancement with configurable error handling.
@@ -651,27 +660,27 @@ class Adstract:
             UnexpectedResponseError: If client error or invalid JSON/structure
         """
         status = response.status_code
-        if status in {200, 201, 202}:
+        if status in {HTTP_200_OK, HTTP_201_CREATED, HTTP_202_ACCEPTED}:
             return self._parse_response(response)
-        if status == 400:
+        if status == HTTP_400_BAD_REQUEST:
             raise AuthenticationError(
                 "API key format is invalid",
                 status_code=status,
                 response_snippet=_snippet(response),
             )
-        if status == 401:
+        if status == HTTP_401_UNAUTHORIZED:
             raise AuthenticationError(
                 "Authentication failed: no API key provided or API key is invalid",
                 status_code=status,
                 response_snippet=_snippet(response),
             )
-        if status == 403:
+        if status == HTTP_403_FORBIDDEN:
             raise AuthenticationError(
                 "Access denied: API key revoked, or platform/publisher account is not active",
                 status_code=status,
                 response_snippet=_snippet(response),
             )
-        if status == 409:
+        if status == HTTP_409_CONFLICT:
             raise DuplicateAdRequestError(
                 "The provided message already has an ad request",
                 status_code=status,
@@ -730,13 +739,13 @@ class Adstract:
     # Enhancement result helpers.
 
     def _build_ad_enchancment_result(
-            self,
-            *,
-            prompt: str,
-            session_id: str,
-            ad_response: Optional[AdResponse],
-            success: bool,
-            error: Optional[Exception] = None,
+        self,
+        *,
+        prompt: str,
+        session_id: str,
+        ad_response: Optional[AdResponse],
+        success: bool,
+        error: Optional[Exception] = None,
     ) -> EnhancementResult:
         """
         Build an EnhancementResult object from ad request components.
@@ -786,9 +795,9 @@ class Adstract:
     # Acknowledgment payload construction and public entry points.
 
     def _build_ad_ack(
-            self,
-            enhancement_result: EnhancementResult,
-            llm_response: str,
+        self,
+        enhancement_result: EnhancementResult,
+        llm_response: str,
     ) -> AdAck:
         """
         Build AdAck payload from enhancement result and LLM response.
@@ -816,11 +825,11 @@ class Adstract:
         )
 
     def acknowledge(
-            self,
-            *,
-            enhancement_result: EnhancementResult,
-            llm_response: str,
-            raise_exception: bool = True,
+        self,
+        *,
+        enhancement_result: EnhancementResult,
+        llm_response: str,
+        raise_exception: bool = True,
     ) -> Optional[AdAckResponse]:
         """
         Report ad acknowledgment with configurable error handling.
@@ -878,11 +887,11 @@ class Adstract:
             return None
 
     async def acknowledge_async(
-            self,
-            *,
-            enhancement_result: EnhancementResult,
-            llm_response: str,
-            raise_exception: bool = True,
+        self,
+        *,
+        enhancement_result: EnhancementResult,
+        llm_response: str,
+        raise_exception: bool = True,
     ) -> Optional[AdAckResponse]:
         """
         Asynchronously report ad acknowledgment with configurable error handling.
@@ -1023,41 +1032,41 @@ class Adstract:
         """
         status = response.status_code
 
-        if status in {200, 201}:
+        if status in {HTTP_200_OK, HTTP_201_CREATED}:
             return self._parse_ad_ack_response(response)
 
-        if status == 400:
+        if status == HTTP_400_BAD_REQUEST:
             raise AuthenticationError(
                 "API key format is invalid",
                 status_code=status,
                 response_snippet=_snippet(response),
             )
-        if status == 401:
+        if status == HTTP_401_UNAUTHORIZED:
             raise AuthenticationError(
                 "Authentication failed: no API key provided or API key is invalid",
                 status_code=status,
                 response_snippet=_snippet(response),
             )
-        if status == 403:
+        if status == HTTP_403_FORBIDDEN:
             raise AuthenticationError(
                 "Access denied: API key revoked, platform/publisher account is not active, "
                 "or the ad response belongs to another platform",
                 status_code=status,
                 response_snippet=_snippet(response),
             )
-        if status == 404:
+        if status == HTTP_404_NOT_FOUND:
             raise AdResponseNotFoundError(
                 "Acknowledgment failed: ad_response_id not found",
                 status_code=status,
                 response_snippet=_snippet(response),
             )
-        if status == 406:
+        if status == HTTP_406_NOT_ACCEPTABLE:
             raise UnsuccessfulAdResponseError(
                 "Acknowledgment failed: the ad response was not a successful enhancement",
                 status_code=status,
                 response_snippet=_snippet(response),
             )
-        if status == 409:
+        if status == HTTP_409_CONFLICT:
             raise DuplicateAcknowledgmentError(
                 "Acknowledgment failed: this ad response has already been acknowledged",
                 status_code=status,
