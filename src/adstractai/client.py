@@ -30,7 +30,9 @@ from adstractai.constants import (
 from adstractai.errors import (
     AdEnhancementError,
     AdSDKError,
+    AdResponseNotFoundError,
     AuthenticationError,
+    DuplicateAcknowledgmentError,
     DuplicateAdRequestError,
     MissingParameterError,
     NetworkError,
@@ -38,6 +40,7 @@ from adstractai.errors import (
     PromptRejectedError,
     RateLimitError,
     ServerError,
+    UnsuccessfulAdResponseError,
     UnexpectedResponseError,
     ValidationError,
 )
@@ -66,6 +69,8 @@ CLIENT_ERROR_MAX = 499
 
 class Adstract:
     """Client for sending ad requests to the Adstract backend."""
+
+    # Client setup and transport ownership.
 
     def __init__(
             self,
@@ -118,6 +123,60 @@ class Adstract:
         self._owns_client = http_client is None
         self._owns_async_client = async_http_client is None
 
+    def _build_headers(self) -> dict[str, str]:
+        """
+        Build HTTP headers for API requests.
+
+        Returns:
+            dict: Dictionary of headers including SDK info and API key
+        """
+        return {
+            SDK_HEADER_NAME: SDK_NAME,
+            SDK_VERSION_HEADER_NAME: SDK_VERSION,
+            API_KEY_HEADER_NAME: self._api_key,
+        }
+
+    def _endpoint(self) -> str:
+        """
+        Get the ad injection endpoint URL.
+
+        Returns:
+            str: Complete URL for the ad injection endpoint
+        """
+        return f"{self._base_url}{AD_INJECTION_ENDPOINT}"
+
+    def _ad_ack_endpoint(self) -> str:
+        """
+        Get the ad acknowledgment endpoint URL.
+
+        Constructs the complete URL for sending ad acknowledgment data to the backend.
+
+        Returns:
+            str: Complete URL for the ad acknowledgment endpoint
+        """
+        """Get the ad acknowledgment endpoint URL."""
+        return f"{self._base_url}{AD_ACK_ENDPOINT}"
+
+    def _sleep_backoff(self, attempt: int) -> None:
+        """
+        Sleep with exponential backoff for retry attempts.
+
+        Args:
+            attempt: Current attempt number (0-based)
+        """
+        delay = min(self._backoff_factor * (2 ** attempt), self._max_backoff)
+        time.sleep(delay)
+
+    async def _sleep_backoff_async(self, attempt: int) -> None:
+        """
+        Async version of _sleep_backoff. Sleep with exponential backoff for retry attempts.
+
+        Args:
+            attempt: Current attempt number (0-based)
+        """
+        delay = min(self._backoff_factor * (2 ** attempt), self._max_backoff)
+        await asyncio.sleep(delay)
+
     def close(self) -> None:
         """Close the HTTP client connection if owned by this instance."""
         if self._owns_client:
@@ -127,6 +186,8 @@ class Adstract:
         """Close the async HTTP client connection if owned by this instance."""
         if self._owns_async_client:
             await self._async_client.aclose()
+
+    # Request validation and payload construction.
 
     def _validate_required_params(self, user_agent: str, user_ip: str) -> None:
         """
@@ -211,59 +272,7 @@ class Adstract:
         )
         return request_model.to_payload()
 
-    def _build_ad_enchancment_result(
-            self,
-            *,
-            prompt: str,
-            session_id: str,
-            ad_response: Optional[AdResponse],
-            success: bool,
-            error: Optional[Exception] = None,
-    ) -> EnhancementResult:
-        """
-        Build an EnhancementResult object from ad request components.
-
-        Args:
-            prompt: The enhanced or original prompt text
-            session_id: Session identifier for the request
-            ad_response: Response from the ad API (can be None for error cases)
-            success: Whether the ad enhancement was successful
-            error: Exception that occurred (if any)
-
-        Returns:
-            EnhancementResult: Complete result object with all request information
-        """
-        return EnhancementResult(
-            prompt=prompt,
-            session_id=session_id,
-            ad_response=ad_response,
-            success=success,
-            error=error,
-        )
-
-    @staticmethod
-    def _build_enhancement_error(response: AdResponse) -> AdEnhancementError:
-        """
-        Build the appropriate AdEnhancementError subclass based on the response status.
-
-        Args:
-            response: The AdResponse from the API
-
-        Returns:
-            AdEnhancementError: A specific error subclass based on the status field:
-                - PromptRejectedError for status='rejected'
-                - NoFillError for status='no_fill'
-                - AdEnhancementError for any other unsuccessful status
-        """
-        status = response.status
-
-        if status == "rejected":
-            return PromptRejectedError("Ad enhancement failed: prompt was not suitable for ad injection")
-
-        if status == "no_fill":
-            return NoFillError("Ad enhancement failed: no ad candidates available for this opportunity")
-
-        return AdEnhancementError("Ad enhancement failed: response unsuccessful or missing prompt data")
+    # Enhancement entry points.
 
     def request_ad(
             self,
@@ -512,14 +521,7 @@ class Adstract:
                 error=exc,
             )
 
-    def _endpoint(self) -> str:
-        """
-        Get the ad injection endpoint URL.
-
-        Returns:
-            str: Complete URL for the ad injection endpoint
-        """
-        return f"{self._base_url}{AD_INJECTION_ENDPOINT}"
+    # Enhancement transport and response handling.
 
     def _send_request(self, payload: dict[str, Any]) -> AdResponse:
         """
@@ -649,6 +651,8 @@ class Adstract:
             UnexpectedResponseError: If client error or invalid JSON/structure
         """
         status = response.status_code
+        if status in {200, 201, 202}:
+            return self._parse_response(response)
         if status == 400:
             raise AuthenticationError(
                 "API key format is invalid",
@@ -680,12 +684,37 @@ class Adstract:
                 response_snippet=_snippet(response),
             )
 
+        logger.warning(
+            "Ad enhancement returned unexpected status",
+            extra={"status_code": status, "response": _snippet(response)},
+        )
+        raise UnexpectedResponseError(
+            "Unexpected response status",
+            status_code=status,
+            response_snippet=_snippet(response),
+        )
+
+    @staticmethod
+    def _parse_response(response: httpx.Response) -> AdResponse:
+        """
+        Parse a successful enhancement response body into AdResponse.
+
+        Args:
+            response: Successful HTTP response from the enhancement endpoint
+
+        Returns:
+            AdResponse: Parsed enhancement response model
+
+        Raises:
+            UnexpectedResponseError: If the response JSON is invalid or the
+                response structure does not match AdResponse
+        """
         try:
             data = response.json()
         except json.JSONDecodeError as exc:
             raise UnexpectedResponseError(
                 "Invalid JSON response",
-                status_code=status,
+                status_code=response.status_code,
                 response_snippet=_snippet(response),
             ) from exc
 
@@ -694,147 +723,67 @@ class Adstract:
         except ValidationError as exc:
             raise UnexpectedResponseError(
                 "Unexpected response structure",
-                status_code=status,
+                status_code=response.status_code,
                 response_snippet=_snippet(response),
             ) from exc
 
-    def _sleep_backoff(self, attempt: int) -> None:
-        """
-        Sleep with exponential backoff for retry attempts.
+    # Enhancement result helpers.
 
-        Args:
-            attempt: Current attempt number (0-based)
-        """
-        delay = min(self._backoff_factor * (2 ** attempt), self._max_backoff)
-        time.sleep(delay)
-
-    async def _sleep_backoff_async(self, attempt: int) -> None:
-        """
-        Async version of _sleep_backoff. Sleep with exponential backoff for retry attempts.
-
-        Args:
-            attempt: Current attempt number (0-based)
-        """
-        delay = min(self._backoff_factor * (2 ** attempt), self._max_backoff)
-        await asyncio.sleep(delay)
-
-    def _build_headers(self) -> dict[str, str]:
-        """
-        Build HTTP headers for API requests.
-
-        Returns:
-            dict: Dictionary of headers including SDK info and API key
-        """
-        return {
-            SDK_HEADER_NAME: SDK_NAME,
-            SDK_VERSION_HEADER_NAME: SDK_VERSION,
-            API_KEY_HEADER_NAME: self._api_key,
-        }
-
-    def acknowledge(
+    def _build_ad_enchancment_result(
             self,
             *,
-            enhancement_result: EnhancementResult,
-            llm_response: str,
-            raise_exception: bool = True,
-    ) -> Optional[AdAckResponse]:
+            prompt: str,
+            session_id: str,
+            ad_response: Optional[AdResponse],
+            success: bool,
+            error: Optional[Exception] = None,
+    ) -> EnhancementResult:
         """
-        Report ad acknowledgment to the backend with configurable error handling.
-        Only reports if the enhancement was successful (ad was injected).
+        Build an EnhancementResult object from ad request components.
 
         Args:
-            enhancement_result: The EnhancementResult from the ad request
-            llm_response: The actual response from the LLM
-            raise_exception: If True (default), raises exceptions on failure.
-                           If False, logs errors but doesn't raise exceptions.
+            prompt: The enhanced or original prompt text
+            session_id: Session identifier for the request
+            ad_response: Response from the ad API (can be None for error cases)
+            success: Whether the ad enhancement was successful
+            error: Exception that occurred (if any)
 
         Returns:
-            AdAckResponse | None: Parsed acknowledgment response on success.
-            Returns None when acknowledgment is skipped because enhancement
-            did not succeed, or when errors are suppressed with
-            raise_exception=False.
-
-        Raises:
-            Exception: Any exception during reporting (when raise_exception=True)
-
-        Note:
-            When raise_exception=False, errors are logged but not raised,
-            avoiding disruption to the main application flow.
-            All analytics and compliance are computed on the backend.
+            EnhancementResult: Complete result object with all request information
         """
-        # Only report if enhancement was successful (ad was injected)
-        if not enhancement_result.success:
-            logger.debug(
-                "Skipping ad acknowledgment - no successful ad enhancement",
-                extra={"success": enhancement_result.success},
-            )
-            return None
+        return EnhancementResult(
+            prompt=prompt,
+            session_id=session_id,
+            ad_response=ad_response,
+            success=success,
+            error=error,
+        )
 
-        try:
-            # Build the AdAck payload
-            ad_ack = self._build_ad_ack(enhancement_result, llm_response)
-
-            # Send to backend
-            return self._send_ad_ack(ad_ack)
-
-        except Exception as exc:
-            if raise_exception:
-                raise
-            logger.error("Failed to send ad acknowledgment", exc_info=exc)
-            return None
-
-    async def acknowledge_async(
-            self,
-            *,
-            enhancement_result: EnhancementResult,
-            llm_response: str,
-            raise_exception: bool = True,
-    ) -> Optional[AdAckResponse]:
+    @staticmethod
+    def _build_enhancement_error(response: AdResponse) -> AdEnhancementError:
         """
-        Async version of acknowledge with configurable error handling.
-        Report ad acknowledgment to the backend asynchronously.
-        Only reports if the enhancement was successful (ad was injected).
+        Build the appropriate AdEnhancementError subclass based on the response status.
 
         Args:
-            enhancement_result: The EnhancementResult from the ad request
-            llm_response: The actual response from the LLM
-            raise_exception: If True (default), raises exceptions on failure.
-                           If False, logs errors but doesn't raise exceptions.
+            response: The AdResponse from the API
 
         Returns:
-            AdAckResponse | None: Parsed acknowledgment response on success.
-            Returns None when acknowledgment is skipped because enhancement
-            did not succeed, or when errors are suppressed with
-            raise_exception=False.
-
-        Raises:
-            Exception: Any exception during reporting (when raise_exception=True)
-
-        Note:
-            When raise_exception=False, errors are logged but not raised,
-            avoiding disruption to the main application flow.
-            All analytics and compliance are computed on the backend.
+            AdEnhancementError: A specific error subclass based on the status field:
+                - PromptRejectedError for status='rejected'
+                - NoFillError for status='no_fill'
+                - AdEnhancementError for any other unsuccessful status
         """
-        # Only report if enhancement was successful (ad was injected)
-        if not enhancement_result.success:
-            logger.debug(
-                "Skipping ad acknowledgment - no successful ad enhancement",
-                extra={"success": enhancement_result.success},
-            )
-            return None
+        status = response.status
 
-        try:
-            # Build the AdAck payload
-            ad_ack = self._build_ad_ack(enhancement_result, llm_response)
+        if status == "rejected":
+            return PromptRejectedError("Ad enhancement failed: prompt was not suitable for ad injection")
 
-            # Send to backend
-            return await self._send_ad_ack_async(ad_ack)
+        if status == "no_fill":
+            return NoFillError("Ad enhancement failed: no ad candidates available for this opportunity")
 
-        except Exception as exc:
-            if raise_exception:
-                raise
-            logger.error("Failed to send ad acknowledgment", exc_info=exc)
-            return None
+        return AdEnhancementError("Ad enhancement failed: response unsuccessful or missing prompt data")
+
+    # Acknowledgment payload construction and public entry points.
 
     def _build_ad_ack(
             self,
@@ -866,35 +815,140 @@ class Adstract:
             diagnostics=diagnostics,
         )
 
-    def _ad_ack_endpoint(self) -> str:
+    def acknowledge(
+            self,
+            *,
+            enhancement_result: EnhancementResult,
+            llm_response: str,
+            raise_exception: bool = True,
+    ) -> Optional[AdAckResponse]:
         """
-        Get the ad acknowledgment endpoint URL.
+        Report ad acknowledgment with configurable error handling.
 
-        Constructs the complete URL for sending ad acknowledgment data to the backend.
+        This method closes the reporting cycle after a successful enhancement.
+        Error handling behavior is controlled by the raise_exception parameter.
+
+        Args:
+            enhancement_result: EnhancementResult returned from request_ad
+            llm_response: Final text returned by the LLM
+            raise_exception: If True (default), raises exceptions on failure.
+                If False, logs errors and returns None.
 
         Returns:
-            str: Complete URL for the ad acknowledgment endpoint
+            AdAckResponse | None: Parsed acknowledgment response on success.
+                Returns None when acknowledgment is skipped because enhancement
+                did not succeed, or when an error is suppressed with
+                raise_exception=False.
+
+        Raises:
+            NetworkError: If the acknowledgment request fails at the transport level
+            AuthenticationError: If authentication fails — 400 (bad key format),
+                401 (missing or invalid API key), or 403 (revoked API key,
+                inactive platform/publisher, or ad response from another platform)
+            AdResponseNotFoundError: If the referenced ad response does not exist (404)
+            UnsuccessfulAdResponseError: If the referenced ad response was not
+                created by a successful enhancement (406)
+            DuplicateAcknowledgmentError: If the ad response was already acknowledged (409)
+            ServerError: If a 5xx server error occurs
+            UnexpectedResponseError: If the response JSON or response structure is invalid
+
+        Note:
+            When raise_exception=False, acknowledgment failures are logged and
+            suppressed so the caller can continue its own control flow.
         """
-        """Get the ad acknowledgment endpoint URL."""
-        return f"{self._base_url}{AD_ACK_ENDPOINT}"
+        # Only report if enhancement was successful (ad was injected)
+        if not enhancement_result.success:
+            logger.debug(
+                "Skipping ad acknowledgment - no successful ad enhancement",
+                extra={"success": enhancement_result.success},
+            )
+            return None
+
+        try:
+            # Build the AdAck payload
+            ad_ack = self._build_ad_ack(enhancement_result, llm_response)
+
+            # Send to backend
+            return self._send_ad_ack(ad_ack)
+
+        except Exception as exc:
+            if raise_exception:
+                raise
+            logger.error("Failed to send ad acknowledgment", exc_info=exc)
+            return None
+
+    async def acknowledge_async(
+            self,
+            *,
+            enhancement_result: EnhancementResult,
+            llm_response: str,
+            raise_exception: bool = True,
+    ) -> Optional[AdAckResponse]:
+        """
+        Asynchronously report ad acknowledgment with configurable error handling.
+
+        Async version of acknowledge(). This method closes the reporting cycle
+        after a successful enhancement using async transport.
+
+        Args:
+            enhancement_result: EnhancementResult returned from request_ad_async
+            llm_response: Final text returned by the LLM
+            raise_exception: If True (default), raises exceptions on failure.
+                If False, logs errors and returns None.
+
+        Returns:
+            AdAckResponse | None: Parsed acknowledgment response on success.
+                Returns None when acknowledgment is skipped because enhancement
+                did not succeed, or when an error is suppressed with
+                raise_exception=False.
+
+        Raises:
+            NetworkError: If the acknowledgment request fails at the transport level
+            AuthenticationError: If authentication fails — 400 (bad key format),
+                401 (missing or invalid API key), or 403 (revoked API key,
+                inactive platform/publisher, or ad response from another platform)
+            AdResponseNotFoundError: If the referenced ad response does not exist (404)
+            UnsuccessfulAdResponseError: If the referenced ad response was not
+                created by a successful enhancement (406)
+            DuplicateAcknowledgmentError: If the ad response was already acknowledged (409)
+            ServerError: If a 5xx server error occurs
+            UnexpectedResponseError: If the response JSON or response structure is invalid
+
+        Note:
+            When raise_exception=False, acknowledgment failures are logged and
+            suppressed so the caller can continue its own control flow.
+        """
+        if not enhancement_result.success:
+            logger.debug(
+                "Skipping ad acknowledgment - no successful ad enhancement",
+                extra={"success": enhancement_result.success},
+            )
+            return None
+
+        try:
+            # Build the AdAck payload
+            ad_ack = self._build_ad_ack(enhancement_result, llm_response)
+
+            # Send to backend
+            return await self._send_ad_ack_async(ad_ack)
+
+        except Exception as exc:
+            if raise_exception:
+                raise
+            logger.error("Failed to send ad acknowledgment", exc_info=exc)
+            return None
+
+    # Acknowledgment transport and response handling.
 
     def _send_ad_ack(self, ad_ack: AdAck) -> AdAckResponse:
         """
-        Send AdAck payload to the backend synchronously and parse the response.
+        Send AdAck payload to the backend synchronously.
 
         Args:
             ad_ack: Complete ad acknowledgment payload to send
 
         Returns:
             AdAckResponse: Parsed acknowledgment response returned by the backend
-
-        Raises:
-            AuthenticationError: If API key is not recognized or access is denied (401, 403)
-            UnexpectedResponseError: If the API key format is invalid (400), ad_response_id
-                is not found (404), the ad response was not a successful enhancement (406),
-                was already acknowledged (409), or the success response body is invalid
-            ServerError: If a 5xx error occurs — acknowledgment outcome is unknown.
-                Stop Adstract services if this occurs; prior traffic remains safe.
         """
         url = self._ad_ack_endpoint()
         headers = self._build_headers()
@@ -907,85 +961,25 @@ class Adstract:
         except (httpx.TimeoutException, httpx.TransportError) as exc:
             raise NetworkError("Network error during acknowledgment", original_error=exc) from exc
 
-        status = response.status_code
-
-        if status in {200, 201}:
-            return self._parse_ad_ack_response(response)
-
-        if status == 400:
-            raise UnexpectedResponseError(
-                "Acknowledgment failed: API key format is invalid",
-                status_code=status,
-                response_snippet=_snippet(response),
-            )
-        if status == 401:
-            raise AuthenticationError(
-                "Authentication failed: no API key provided or API key is invalid",
-                status_code=status,
-                response_snippet=_snippet(response),
-            )
-        if status == 403:
-            raise AuthenticationError(
-                "Access denied: API key revoked, platform/publisher account is not active, "
-                "or the ad response belongs to another platform",
-                status_code=status,
-                response_snippet=_snippet(response),
-            )
-        if status == 404:
-            raise UnexpectedResponseError(
-                "Acknowledgment failed: ad_response_id not found",
-                status_code=status,
-                response_snippet=_snippet(response),
-            )
-        if status == 406:
-            raise UnexpectedResponseError(
-                "Acknowledgment failed: the ad response was not a successful enhancement",
-                status_code=status,
-                response_snippet=_snippet(response),
-            )
-        if status == 409:
-            raise UnexpectedResponseError(
-                "Acknowledgment failed: this ad response has already been acknowledged",
-                status_code=status,
-                response_snippet=_snippet(response),
-            )
-        if SERVER_ERROR_MIN <= status <= SERVER_ERROR_MAX:
+        if SERVER_ERROR_MIN <= response.status_code <= SERVER_ERROR_MAX:
             raise ServerError(
                 "Acknowledgment failed with a server error: outcome is unknown. "
                 "Stop Adstract services until this is resolved. Prior traffic is unaffected.",
-                status_code=status,
+                status_code=response.status_code,
                 response_snippet=_snippet(response),
             )
 
-        logger.warning(
-            "Ad acknowledgment returned unexpected status",
-            extra={"status_code": status, "response": _snippet(response)},
-        )
-        raise UnexpectedResponseError(
-            "Unexpected acknowledgment response status",
-            status_code=status,
-            response_snippet=_snippet(response),
-        )
+        return self._handle_ad_ack_response(response)
 
     async def _send_ad_ack_async(self, ad_ack: AdAck) -> AdAckResponse:
         """
-        Send AdAck payload to the backend asynchronously and parse the response.
-
-        Async version of _send_ad_ack.
+        Send AdAck payload to the backend asynchronously.
 
         Args:
             ad_ack: Complete ad acknowledgment payload to send
 
         Returns:
             AdAckResponse: Parsed acknowledgment response returned by the backend
-
-        Raises:
-            AuthenticationError: If API key is not recognized or access is denied (401, 403)
-            UnexpectedResponseError: If the API key format is invalid (400), ad_response_id
-                is not found (404), the ad response was not a successful enhancement (406),
-                was already acknowledged (409), or the success response body is invalid
-            ServerError: If a 5xx error occurs — acknowledgment outcome is unknown.
-                Stop Adstract services if this occurs; prior traffic remains safe.
         """
         url = self._ad_ack_endpoint()
         headers = self._build_headers()
@@ -1000,20 +994,41 @@ class Adstract:
         except (httpx.TimeoutException, httpx.TransportError) as exc:
             raise NetworkError("Network error during acknowledgment", original_error=exc) from exc
 
+        if SERVER_ERROR_MIN <= response.status_code <= SERVER_ERROR_MAX:
+            raise ServerError(
+                "Acknowledgment failed with a server error: outcome is unknown. "
+                "Stop Adstract services until this is resolved. Prior traffic is unaffected.",
+                status_code=response.status_code,
+                response_snippet=_snippet(response),
+            )
+
+        return self._handle_ad_ack_response(response)
+
+    def _handle_ad_ack_response(self, response: httpx.Response) -> AdAckResponse:
+        """
+        Handle HTTP acknowledgment response and convert it to AdAckResponse.
+
+        Args:
+            response: Raw HTTP response from the acknowledgment endpoint
+
+        Returns:
+            AdAckResponse: Parsed and validated acknowledgment response object
+
+        Raises:
+            AuthenticationError: If authentication failed (400, 401, 403)
+            AdResponseNotFoundError: If the referenced ad response does not exist (404)
+            UnsuccessfulAdResponseError: If the ad response was not a successful enhancement (406)
+            DuplicateAcknowledgmentError: If an acknowledgment already exists for the response (409)
+            UnexpectedResponseError: If the response JSON or response structure is invalid
+        """
         status = response.status_code
 
         if status in {200, 201}:
             return self._parse_ad_ack_response(response)
 
         if status == 400:
-            raise UnexpectedResponseError(
-                "Acknowledgment failed: API key format is invalid",
-                status_code=status,
-                response_snippet=_snippet(response),
-            )
-        if status == 406:
-            raise UnexpectedResponseError(
-                "Acknowledgment failed: the ad response was not a successful enhancement",
+            raise AuthenticationError(
+                "API key format is invalid",
                 status_code=status,
                 response_snippet=_snippet(response),
             )
@@ -1031,21 +1046,26 @@ class Adstract:
                 response_snippet=_snippet(response),
             )
         if status == 404:
-            raise UnexpectedResponseError(
+            raise AdResponseNotFoundError(
                 "Acknowledgment failed: ad_response_id not found",
                 status_code=status,
                 response_snippet=_snippet(response),
             )
+        if status == 406:
+            raise UnsuccessfulAdResponseError(
+                "Acknowledgment failed: the ad response was not a successful enhancement",
+                status_code=status,
+                response_snippet=_snippet(response),
+            )
         if status == 409:
-            raise UnexpectedResponseError(
+            raise DuplicateAcknowledgmentError(
                 "Acknowledgment failed: this ad response has already been acknowledged",
                 status_code=status,
                 response_snippet=_snippet(response),
             )
-        if SERVER_ERROR_MIN <= status <= SERVER_ERROR_MAX:
-            raise ServerError(
-                "Acknowledgment failed with a server error: outcome is unknown. "
-                "Stop Adstract services until this is resolved. Prior traffic is unaffected.",
+        if CLIENT_ERROR_MIN <= status <= CLIENT_ERROR_MAX:
+            raise UnexpectedResponseError(
+                "Unexpected client error",
                 status_code=status,
                 response_snippet=_snippet(response),
             )

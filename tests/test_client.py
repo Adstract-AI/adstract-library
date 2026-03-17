@@ -16,14 +16,17 @@ from adstractai.constants import (
     SDK_VERSION_HEADER_NAME,
 )
 from adstractai.errors import (
+    AdResponseNotFoundError,
     AdEnhancementError,
     AuthenticationError,
+    DuplicateAcknowledgmentError,
     DuplicateAdRequestError,
     MissingParameterError,
     NoFillError,
     PromptRejectedError,
     RateLimitError,
     ServerError,
+    UnsuccessfulAdResponseError,
     UnexpectedResponseError,
     ValidationError,
 )
@@ -1104,8 +1107,8 @@ def test_acknowledge_maps_403_to_authentication_error() -> None:
         )
 
 
-def test_acknowledge_maps_404_to_unexpected_response_error() -> None:
-    """Test that acknowledgment 404 errors map to UnexpectedResponseError."""
+def test_acknowledge_maps_404_to_ad_response_not_found_error() -> None:
+    """Test that acknowledgment 404 errors map to AdResponseNotFoundError."""
 
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(404, json={"detail": "not found"})
@@ -1118,15 +1121,15 @@ def test_acknowledge_maps_404_to_unexpected_response_error() -> None:
 
     enhancement_result = _create_mock_enhancement_result()
 
-    with pytest.raises(UnexpectedResponseError, match="Acknowledgment failed: ad_response_id not found"):
+    with pytest.raises(AdResponseNotFoundError, match="Acknowledgment failed: ad_response_id not found"):
         client.acknowledge(
             enhancement_result=enhancement_result,
             llm_response="LLM response",
         )
 
 
-def test_acknowledge_maps_409_to_unexpected_response_error() -> None:
-    """Test that acknowledgment 409 errors map to duplicate acknowledgment."""
+def test_acknowledge_maps_409_to_duplicate_acknowledgment_error() -> None:
+    """Test that acknowledgment 409 errors map to DuplicateAcknowledgmentError."""
 
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(409, json={"detail": "conflict"})
@@ -1140,7 +1143,7 @@ def test_acknowledge_maps_409_to_unexpected_response_error() -> None:
     enhancement_result = _create_mock_enhancement_result()
 
     with pytest.raises(
-        UnexpectedResponseError,
+        DuplicateAcknowledgmentError,
         match="Acknowledgment failed: this ad response has already been acknowledged",
     ):
         client.acknowledge(
@@ -1149,8 +1152,8 @@ def test_acknowledge_maps_409_to_unexpected_response_error() -> None:
         )
 
 
-def test_acknowledge_maps_400_to_unexpected_response_error() -> None:
-    """Test that acknowledgment 400 errors map to invalid API key format."""
+def test_acknowledge_maps_400_to_authentication_error() -> None:
+    """Test that acknowledgment 400 errors map to AuthenticationError."""
 
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(400, json={"detail": "bad request"})
@@ -1163,15 +1166,15 @@ def test_acknowledge_maps_400_to_unexpected_response_error() -> None:
 
     enhancement_result = _create_mock_enhancement_result()
 
-    with pytest.raises(UnexpectedResponseError, match="Acknowledgment failed: API key format is invalid"):
+    with pytest.raises(AuthenticationError, match="API key format is invalid"):
         client.acknowledge(
             enhancement_result=enhancement_result,
             llm_response="LLM response",
         )
 
 
-def test_acknowledge_maps_406_to_unexpected_response_error() -> None:
-    """Test that acknowledgment 406 errors map to unsuccessful enhancement."""
+def test_acknowledge_maps_406_to_unsuccessful_ad_response_error() -> None:
+    """Test that acknowledgment 406 errors map to UnsuccessfulAdResponseError."""
 
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(406, json={"detail": "not acceptable"})
@@ -1185,7 +1188,7 @@ def test_acknowledge_maps_406_to_unexpected_response_error() -> None:
     enhancement_result = _create_mock_enhancement_result()
 
     with pytest.raises(
-        UnexpectedResponseError,
+        UnsuccessfulAdResponseError,
         match="Acknowledgment failed: the ad response was not a successful enhancement",
     ):
         client.acknowledge(
