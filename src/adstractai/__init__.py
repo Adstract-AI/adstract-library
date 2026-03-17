@@ -2,19 +2,25 @@
 
 from adstractai.client import Adstract
 from adstractai.errors import (
+    AdAcknowledgmentError,
     AdEnhancementError,
+    AdResponseNotFoundError,
     AdSDKError,
     AuthenticationError,
+    DuplicateAcknowledgmentError,
+    DuplicateAdRequestError,
     NetworkError,
     NoFillError,
     PromptRejectedError,
     RateLimitError,
     ServerError,
     UnexpectedResponseError,
+    UnsuccessfulAdResponseError,
     ValidationError,
 )
 from adstractai.models import (
     AdAck,
+    AdAckResponse,
     AdRequest,
     AdRequestContext,
     AdResponse,
@@ -26,6 +32,7 @@ from adstractai.models import (
 __all__ = [
     "Adstract",
     "AdAck",
+    "AdAckResponse",
     "AdRequest",
     "AdRequestContext",
     "AdResponse",
@@ -33,13 +40,18 @@ __all__ = [
     "EnhancementResult",
     "OptionalContext",
     "AdSDKError",
+    "AdAcknowledgmentError",
     "AdEnhancementError",
+    "AdResponseNotFoundError",
     "AuthenticationError",
+    "DuplicateAcknowledgmentError",
+    "DuplicateAdRequestError",
     "NetworkError",
     "NoFillError",
     "PromptRejectedError",
     "RateLimitError",
     "ServerError",
+    "UnsuccessfulAdResponseError",
     "UnexpectedResponseError",
     "ValidationError",
 ]

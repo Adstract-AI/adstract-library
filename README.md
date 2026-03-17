@@ -1,20 +1,36 @@
-# Adstract AI Python SDK
+# Adstract SDK for Python
 
 ![Python](https://img.shields.io/badge/python-3.10-blue)
 ![Python](https://img.shields.io/badge/python-3.11-blue)
 ![Python](https://img.shields.io/badge/python-3.12-blue)
 
-Ad network SDK that enhances LLM prompts with integrated advertisements.
+Adstract integrates ad-enhanced prompts into LLM applications and provides the
+acknowledgment flow required to close the ad cycle after the final model
+response is produced.
 
 ## Official Documentation
 
-Full documentation is available at:
-https://adstract-ai.github.io/adstract-documentation/
+Full documentation is available at [Adstract Documentation](https://adstract-ai.github.io/adstract-documentation/).
 
 ## Install
 
 ```bash
 pip install adstractai
+```
+
+## Authentication
+
+Pass an API key when initializing the client, or set the `ADSTRACT_API_KEY`
+environment variable.
+
+```bash
+export ADSTRACT_API_KEY="adpk_live_123"
+```
+
+```python
+from adstractai import Adstract
+
+client = Adstract()
 ```
 
 ## Quickstart
@@ -36,55 +52,60 @@ result = client.request_ad(
     ),
 )
 
-# Enhanced prompt with integrated ads, or original prompt on failure
-print(result.prompt)
+prompt_for_model = result.prompt
+llm_response = "Your final LLM response here"
+
+ack = client.acknowledge(
+    enhancement_result=result,
+    llm_response=llm_response,
+)
+
+if ack is not None:
+    print(ack.ad_ack_id)
+    print(ack.status)
+    print(ack.success)
 
 client.close()
 ```
 
-## Authentication
+## Core Flow
 
-Pass an API key when initializing the client, or set the `ADSTRACT_API_KEY` environment variable.
+The SDK integration flow has two main steps:
 
-```bash
-export ADSTRACT_API_KEY="adpk_live_123"
-```
+1. Call `request_ad()` or `request_ad_async()` to get an `EnhancementResult`.
+2. After your LLM produces its final response, call `acknowledge()` or
+   `acknowledge_async()` to close the ad cycle.
+
+`EnhancementResult.prompt` always gives you the prompt your application should
+use next:
+
+- enhanced prompt when ad injection succeeds;
+- original prompt when the SDK falls back.
+
+## Required Request Context
+
+`request_ad()` and `request_ad_async()` require an `AdRequestContext` with:
+
+- `session_id`
+- `user_agent`
+- `user_ip`
 
 ```python
-from adstractai import Adstract
+from adstractai.models import AdRequestContext
 
-client = Adstract()
-```
-
-## Required Parameters
-
-`request_ad` and `request_ad_async` require `session_id`, `user_agent`, and `user_ip`. Missing any
-of these returns an `EnhancementResult` with `success=False` and a `MissingParameterError` in
-`error`.
-
-```python
-from adstractai import Adstract, AdRequestContext
-from adstractai.errors import MissingParameterError
-
-client = Adstract(api_key="adpk_live_123")
-
-result = client.request_ad(
-    prompt="Test prompt",
-    context=AdRequestContext(
-        session_id="sess-1",
-        user_agent="",        # empty — will trigger MissingParameterError
-        user_ip="203.0.113.24",
-    ),
-    raise_exception=False,
+context = AdRequestContext(
+    session_id="sess-1",
+    user_agent="Mozilla/5.0 (X11; Linux x86_64)",
+    user_ip="203.0.113.24",
 )
-
-if isinstance(result.error, MissingParameterError):
-    print(f"Missing parameter: {result.error}")
 ```
+
+Missing required values raise `MissingParameterError`, or are captured in
+`EnhancementResult.error` when `raise_exception=False`.
 
 ## Optional Context
 
-Pass an `OptionalContext` to provide additional targeting signals.
+Pass `OptionalContext` to include optional targeting signals.
 
 ```python
 from adstractai import Adstract, AdRequestContext, OptionalContext
@@ -95,7 +116,7 @@ result = client.request_ad(
     prompt="How do I improve analytics in my LLM app?",
     context=AdRequestContext(
         session_id="sess-1",
-        user_agent="Mozilla/5.0 ...",
+        user_agent="Mozilla/5.0 (X11; Linux x86_64)",
         user_ip="203.0.113.24",
     ),
     optional_context=OptionalContext(
@@ -109,85 +130,140 @@ result = client.request_ad(
 )
 ```
 
-`OptionalContext` fields are all optional. Validation rules:
+Validation rules:
 
 | Field | Rule |
-|-------|------|
-| `age` | Integer between 0 and 120 inclusive |
+|---|---|
+| `age` | Integer between `0` and `120` |
 | `gender` | One of `"male"`, `"female"`, `"other"` |
-| `country` | ISO 3166-1 alpha-2 code (e.g. `"US"`, `"DE"`) |
+| `country` | ISO 3166-1 alpha-2 code such as `"US"` |
+
+## Enhancement Results
+
+`request_ad()` and `request_ad_async()` return `EnhancementResult`.
+
+Important fields:
+
+- `prompt`: the prompt your application should pass to the model
+- `session_id`: the request session identifier
+- `ad_response`: parsed backend response when available
+- `success`: whether ad enhancement succeeded
+- `error`: captured failure when `raise_exception=False`
+
+```python
+if result.success:
+    prompt_for_model = result.prompt
+else:
+    print(result.error)
+    prompt_for_model = result.prompt
+```
+
+## Acknowledgment Results
+
+`acknowledge()` and `acknowledge_async()` return `AdAckResponse` on successful
+acknowledgment.
+
+`AdAckResponse` includes:
+
+- `ad_ack_id`
+- `status`
+- `success`
+
+`success` means the acknowledgment itself completed successfully:
+
+- `status="ok"` -> `success=True`
+- `status="no_ad_used"` -> `success=True`
+- `status="recoverable_error"` -> `success=False`
+
+If `enhancement_result.success` is `False`, acknowledgment is skipped and the
+method returns `None`.
 
 ## Error Handling
 
-By default (`raise_exception=True`) errors are raised as exceptions. Set `raise_exception=False`
-to receive errors in the result instead, which is useful when you want the original prompt as a
-fallback.
+By default, SDK methods raise on failure.
+
+- `request_ad(..., raise_exception=True)`
+- `acknowledge(..., raise_exception=True)`
+
+Set `raise_exception=False` if you want a fallback-first integration flow.
+
+### Enhancement exceptions
 
 ```python
-from adstractai import Adstract, AdRequestContext
 from adstractai.errors import (
     AdEnhancementError,
+    AuthenticationError,
+    DuplicateAdRequestError,
     NoFillError,
     PromptRejectedError,
 )
 
-client = Adstract(api_key="adpk_live_123")
-
 result = client.request_ad(
     prompt="My prompt",
-    context=AdRequestContext(
-        session_id="sess-1",
-        user_agent="Mozilla/5.0 ...",
-        user_ip="203.0.113.24",
-    ),
+    context=context,
     raise_exception=False,
 )
 
 if result.success:
-    print(result.prompt)          # enhanced prompt
+    print(result.prompt)
 elif isinstance(result.error, PromptRejectedError):
     print("Prompt not suitable for ad injection")
-    print(result.prompt)          # original prompt
 elif isinstance(result.error, NoFillError):
     print("No ad inventory available")
-    print(result.prompt)          # original prompt
+elif isinstance(result.error, DuplicateAdRequestError):
+    print("This message already has an ad request")
+elif isinstance(result.error, AuthenticationError):
+    print("Authentication failed")
 elif isinstance(result.error, AdEnhancementError):
-    print(f"Enhancement failed: {result.error}")
+    print(result.error)
 ```
 
-Both `PromptRejectedError` and `NoFillError` are subclasses of `AdEnhancementError`.
-
-## Acknowledge
-
-After sending the enhanced prompt to your LLM and receiving a response, call `acknowledge` to
-report the outcome back to Adstract.
+### Acknowledgment exceptions
 
 ```python
-llm_response = "..."   # response from your LLM
-
-client.acknowledge(
-    enhancement_result=result,
-    llm_response=llm_response,
+from adstractai.errors import (
+    AdResponseNotFoundError,
+    AuthenticationError,
+    DuplicateAcknowledgmentError,
+    UnsuccessfulAdResponseError,
 )
-```
 
-`acknowledge` is a no-op when `result.success` is `False`, so it is safe to call unconditionally.
+try:
+    ack = client.acknowledge(
+        enhancement_result=result,
+        llm_response="Final response",
+    )
+except AuthenticationError:
+    print("Authentication failed")
+except AdResponseNotFoundError:
+    print("The ad response was not found")
+except UnsuccessfulAdResponseError:
+    print("The ad response was not created by a successful enhancement")
+except DuplicateAcknowledgmentError:
+    print("This response was already acknowledged")
+```
 
 ## Wrapping Type
 
-Control how ads are wrapped in the enhanced prompt. Defaults to `"xml"`.
+Control how ads are wrapped in the enhanced prompt. The default is `"xml"`.
 
 ```python
 client = Adstract(api_key="adpk_live_123", wrapping_type="markdown")
 ```
 
-Supported values: `"xml"`, `"plain"`, `"markdown"`.
+Supported values:
+
+- `"xml"`
+- `"plain"`
+- `"markdown"`
 
 ## Async Usage
 
 ```python
 import asyncio
+
 from adstractai import Adstract, AdRequestContext
+
 
 async def main() -> None:
     client = Adstract(api_key="adpk_live_123")
@@ -204,27 +280,33 @@ async def main() -> None:
         ),
     )
 
-    print(result.prompt)
+    llm_response = "Your final LLM response here"
 
-    if result.success:
-        llm_response = "..."  # your LLM call here
-        await client.acknowledge_async(
-            enhancement_result=result,
-            llm_response=llm_response,
-        )
+    ack = await client.acknowledge_async(
+        enhancement_result=result,
+        llm_response=llm_response,
+    )
+
+    if ack is not None:
+        print(ack.ad_ack_id)
 
     await client.aclose()
+
 
 asyncio.run(main())
 ```
 
-## Available Methods
+## Public API
 
 | Method | Description |
-|--------|-------------|
-| `request_ad()` | Request ad enhancement (sync) |
-| `request_ad_async()` | Request ad enhancement (async) |
-| `acknowledge()` | Report LLM response back to Adstract (sync) |
-| `acknowledge_async()` | Report LLM response back to Adstract (async) |
-| `close()` | Close the sync HTTP client |
-| `aclose()` | Close the async HTTP client |
+|---|---|
+| `request_ad()` | Request ad enhancement synchronously |
+| `request_ad_async()` | Request ad enhancement asynchronously |
+| `acknowledge()` | Report the final LLM response and return `AdAckResponse` |
+| `acknowledge_async()` | Async acknowledgment flow returning `AdAckResponse` |
+| `close()` | Close the owned sync HTTP client |
+| `aclose()` | Close the owned async HTTP client |
+
+## License
+
+This SDK is distributed under the Adstract SDK Proprietary License. See `LICENSE`.

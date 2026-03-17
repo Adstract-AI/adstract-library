@@ -50,6 +50,26 @@ class UnexpectedResponseError(AdSDKError):
     """Raised when the response payload is invalid or unexpected."""
 
 
+class DuplicateAdRequestError(UnexpectedResponseError):
+    """Raised when a message already has an ad request associated with it."""
+
+
+class AdAcknowledgmentError(AdSDKError):
+    """Raised when the acknowledgment pipeline fails."""
+
+
+class AdResponseNotFoundError(AdAcknowledgmentError):
+    """Raised when an acknowledgment references an unknown ad response."""
+
+
+class UnsuccessfulAdResponseError(AdAcknowledgmentError):
+    """Raised when an acknowledgment references an unsuccessful enhancement response."""
+
+
+class DuplicateAcknowledgmentError(AdAcknowledgmentError):
+    """Raised when an acknowledgment already exists for the ad response."""
+
+
 class AdEnhancementError(AdSDKError):
     """Raised when ad enhancement fails."""
 
