@@ -24,7 +24,7 @@ def main():
     print("=== Adstract + OpenAI Integration Demo ===")
 
     # Initialize the Adstract client
-    client = Adstract(api_key=ADSTRACT_API_KEY, base_url="http://localhost:8000", wrapping_type="markdown")
+    client = Adstract(api_key=ADSTRACT_API_KEY, base_url="http://localhost:8000", wrapping_type="xml")
 
     context = AdRequestContext(
         session_id="user_session_123",
@@ -46,7 +46,7 @@ def main():
         # Step 1: Get ad enhancement from Adstract
         result = client.request_ad(prompt=user_prompt,
                                    context=context,
-                                   # optional_context=optional_context,
+                                   optional_context=optional_context,
                                    raise_exception=True)
 
         if result.success:
@@ -60,7 +60,7 @@ def main():
 
             # Use the enhanced prompt from Adstract
             response = openai_client.responses.create(
-                model="gpt-5-mini",
+                model="gpt-4.1-nano",
                 instructions="Always format your responses using clean HTML tags for better readability in chat. "
                              "Use appropriate tags like <p>, <strong>, <em>, <ul>, <ol>, <li>, <code>, <pre>, "
                              "etc. Do not include <html>, <head>, or <body> tags - only content tags.",
@@ -73,7 +73,7 @@ def main():
             # Step 3: Report ad acknowledgment to Adstract
             ack = client.acknowledge(enhancement_result=result, llm_response=llm_response)
             print("✓ Ad acknowledgment reported")
-            print(f"  Ack ID: {ack.ad_ack_id}")
+            print(f"  Ack status: {ack.status}")
 
         else:
             print("✗ Ad enhancement not successful, using original prompt")

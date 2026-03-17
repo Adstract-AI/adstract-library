@@ -9,28 +9,50 @@ All notable changes to this project will be documented in this file.
 - Added a new `AdAckResponse` model for parsed acknowledgment responses.
 - `acknowledge()` and `acknowledge_async()` now return parsed acknowledgment data on success.
 - Added `DuplicateAdRequestError` for enhancement `409 Conflict` responses.
+- Added acknowledgment-specific exceptions for known failure cases:
+  - `AdResponseNotFoundError`
+  - `UnsuccessfulAdResponseError`
+  - `DuplicateAcknowledgmentError`
 
 ### Changed
 
-- The SDK now parses and validates successful acknowledgment responses from the backend.
-- Enhancement HTTP error mapping now reflects the latest backend contract for missing/invalid keys, revoked keys, inactive platform or publisher states, and duplicate ad requests.
-- SDK and REST API documentation were updated to reflect the new acknowledgment response contract.
+- The SDK now parses and validates acknowledgment responses returned by the backend.
+- Acknowledgment responses now expose:
+  - `ad_ack_id`
+  - `status`
+  - `success`
+- Enhancement error mapping now matches the current backend contract for:
+  - missing, invalid, revoked, or inactive API keys
+  - duplicate ad requests
+- Acknowledgment error mapping now matches the current backend contract for:
+  - bad API key format
+  - missing or invalid API key
+  - revoked or inactive platform/publisher state
+  - cross-platform acknowledgment attempts
+  - missing ad responses
+  - unsuccessful enhancement responses
+  - duplicate acknowledgments
 
 ## 1.0.0 - 2026-03-12
 
 ### Breaking Changes
 
-- Renamed `AdRequestContext.x_forwarded_for` to `AdRequestContext.user_ip` to match the updated API interface.
-- Renamed `AdResponse.prompt` to `AdResponse.enhanced_prompt` to match the updated API response structure.
+- Renamed `AdRequestContext.x_forwarded_for` to `AdRequestContext.user_ip`.
+- Renamed `AdResponse.prompt` to `AdResponse.enhanced_prompt`.
 - Renamed `analyse_and_report` to `acknowledge` and `analyse_and_report_async` to `acknowledge_async`.
-- `AdRequest.from_values()` now accepts an optional `optional_context` parameter.
-- `request_ad` and `request_ad_async` now accept an optional `optional_context` keyword argument.
+- `request_ad` and `request_ad_async` now accept optional `optional_context`.
 
 ### Added
 
-- New `OptionalContext` model for optional ad targeting context (country, region, city, asn, age, gender).
-- New `status` field on `AdResponse` (e.g., `"ok"`).
-- `OptionalContext` is now exported from the `adstractai` package.
+- New `OptionalContext` model for optional targeting context:
+  - `country`
+  - `region`
+  - `city`
+  - `asn`
+  - `age`
+  - `gender`
+- New `status` field on `AdResponse`.
+- `OptionalContext` is now exported from the package root.
 
 ## 0.3.1 - 2026-02-21
 
@@ -63,10 +85,8 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
-- Legal/governance documents were updated, including `LICENSE`,
-  `CONTRIBUTING.md`, `SECURITY.md`, and repository policy files.
-- Documentation was extensively revised in this release, with broad updates across
-  most project docs (including SDK usage guidance and quick-start content).
+- Repository policies, legal terms, and product documentation were revised to
+  reflect the current Adstract SDK distribution and usage model.
 
 ## 0.2.0 - 2026-02-10
 
@@ -82,16 +102,12 @@ This release represents the stabilization of multiple pre-release iterations
 ### Added
 
 - Configurable API base URL support in the client.
-- Extended `AdResponse` fields for ad metadata and wrapping support.
-- Analysis pipeline for ad-injected responses.
-- Reporting flow that sends ad acknowledgment data even when analysis encounters failures.
-- Quick start and documentation improvements for SDK usage.
+- Structured response fields for ad metadata and wrapping support.
+- Reporting flow for closing the ad cycle after model generation.
 
 ### Changed
 
-- Refactored request methods to reduce duplication and centralize configuration handling.
-- Simplified conversation/session handling flow in the client API.
-- Package and SDK version updated to `0.2.0`.
+- Simplified conversation and session handling in the client API.
 
 ### Removed
 
@@ -99,9 +115,7 @@ This release represents the stabilization of multiple pre-release iterations
 
 ### Fixed
 
-- Parameter validation and error raising behavior for required request fields.
-- Test suite reliability issues and compatibility updates with refactored request configuration.
-- Ruff formatting/lint fixes and pyproject/version conflict cleanups.
+- Validation behavior for required request fields.
 
 ## 0.1.0 - 2026-01-21
 
