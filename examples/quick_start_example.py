@@ -71,8 +71,9 @@ def main():
             print("✓ OpenAI response received")
 
             # Step 3: Report ad acknowledgment to Adstract
-            client.acknowledge(enhancement_result=result, llm_response=llm_response)
+            ack = client.acknowledge(enhancement_result=result, llm_response=llm_response)
             print("✓ Ad acknowledgment reported")
+            print(f"  Ack ID: {ack.ad_ack_id}")
 
         else:
             print("✗ Ad enhancement not successful, using original prompt")

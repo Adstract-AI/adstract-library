@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, ClassVar, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from pydantic import ValidationError as PydanticValidationError
 
 from adstractai.errors import ValidationError
@@ -51,6 +51,60 @@ class AdAck(BaseModel):
     ad_response_id: str
     llm_response: str
     diagnostics: Diagnostics
+
+
+class AdAckResponse(BaseModel):
+    """
+    Parsed response returned by the ad acknowledgment endpoint.
+
+    Attributes:
+        ad_ack_id: Unique identifier of the created acknowledgment record
+        status: Normalized acknowledgment status from the backend
+        success: Whether the acknowledgment completed successfully. This is
+            true for `ok` and `no_ad_used`, and false for `recoverable_error`.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    ad_ack_id: str
+    status: str
+    success: bool
+
+    @field_validator("status")
+    @classmethod
+    def _validate_status(cls, value: str) -> str:
+        """Validate acknowledgment status values returned by the backend."""
+        if value not in {"ok", "no_ad_used", "recoverable_error"}:
+            raise ValueError("status must be 'ok', 'no_ad_used', or 'recoverable_error'")
+        return value
+
+    @model_validator(mode="after")
+    def _validate_success_matches_status(self) -> AdAckResponse:
+        """Validate that success is consistent with the returned acknowledgment status."""
+        if self.status in {"ok", "no_ad_used"} and self.success is not True:
+            raise ValueError("success must be true when status is 'ok' or 'no_ad_used'")
+        if self.status == "recoverable_error" and self.success is not False:
+            raise ValueError("success must be false when status is 'recoverable_error'")
+        return self
+
+    @classmethod
+    def from_json(cls, payload: Any) -> AdAckResponse:
+        """
+        Create AdAckResponse from raw JSON payload with validation.
+
+        Args:
+            payload: Raw JSON response from the acknowledgment API
+
+        Returns:
+            AdAckResponse: Validated acknowledgment response object
+
+        Raises:
+            ValidationError: If the response structure is invalid
+        """
+        try:
+            return cls.model_validate(payload)
+        except PydanticValidationError as exc:
+            raise ValidationError("Invalid acknowledgment response payload") from exc
 
 
 class EnhancementResult(BaseModel):

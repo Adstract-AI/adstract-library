@@ -18,14 +18,17 @@ from adstractai.constants import (
 from adstractai.errors import (
     AdEnhancementError,
     AuthenticationError,
+    DuplicateAdRequestError,
     MissingParameterError,
     NoFillError,
     PromptRejectedError,
     RateLimitError,
     ServerError,
+    UnexpectedResponseError,
     ValidationError,
 )
 from adstractai.models import (
+    AdAckResponse,
     AdRequestContext,
     AdResponse,
     EnhancementResult,
@@ -142,6 +145,21 @@ def test_authentication_error_mapping(status: int) -> None:
     # request_ad returns a result with error instead of raising
     assert result.success is False
     assert isinstance(result.error, AuthenticationError)
+
+
+def test_duplicate_ad_request_error_mapping() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(409, json={"detail": "duplicate ad request"})
+
+    transport = httpx.MockTransport(handler)
+    client = Adstract(
+        api_key=API_KEY,
+        http_client=httpx.Client(transport=transport),
+    )
+
+    result = client.request_ad(prompt=_valid_prompt(), context=_valid_config(), raise_exception=False)
+    assert result.success is False
+    assert isinstance(result.error, DuplicateAdRequestError)
 
 
 def test_rate_limit_mapping() -> None:
@@ -807,12 +825,13 @@ def test_acknowledge_skips_when_not_successful() -> None:
     )
 
     # Should not call the backend
-    client.acknowledge(
+    ack = client.acknowledge(
         enhancement_result=enhancement_result,
         llm_response="Some LLM response",
     )
 
     assert captured["called"] is False
+    assert ack is None
 
 
 def test_acknowledge_sends_ad_ack_to_backend() -> None:
@@ -823,7 +842,10 @@ def test_acknowledge_sends_ad_ack_to_backend() -> None:
         if AD_ACK_ENDPOINT in str(request.url):
             captured["payload"] = json.loads(request.content.decode("utf-8"))
             captured["url"] = str(request.url) # pyright: ignore[reportArgumentType]
-            return httpx.Response(200, json={})
+            return httpx.Response(
+                200,
+                json={"ad_ack_id": "ack-123", "status": "ok", "success": True},
+            )
         return httpx.Response(200, json={})
 
     transport = httpx.MockTransport(handler)
@@ -835,11 +857,15 @@ def test_acknowledge_sends_ad_ack_to_backend() -> None:
     enhancement_result = _create_mock_enhancement_result()
     llm_response = "This is the LLM response with <ADS>Ad content track-id-123</ADS> embedded."
 
-    client.acknowledge(
+    ack = client.acknowledge(
         enhancement_result=enhancement_result,
         llm_response=llm_response,
     )
 
+    assert isinstance(ack, AdAckResponse)
+    assert ack.ad_ack_id == "ack-123"
+    assert ack.status == "ok"
+    assert ack.success is True
     assert captured["payload"] is not None
     assert "ad_response_id" in captured["payload"]
     assert captured["payload"]["ad_response_id"] == "resp-123"
@@ -861,7 +887,7 @@ def test_acknowledge_diagnostics() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         if AD_ACK_ENDPOINT in str(request.url):
             captured["payload"] = json.loads(request.content.decode("utf-8"))
-        return httpx.Response(200, json={})
+        return httpx.Response(200, json={"ad_ack_id": "ack-456", "status": "ok", "success": True})
 
     transport = httpx.MockTransport(handler)
     client = Adstract(
@@ -892,7 +918,10 @@ def test_acknowledge_async() -> None:
         def handler(request: httpx.Request) -> httpx.Response:
             if AD_ACK_ENDPOINT in str(request.url):
                 captured["payload"] = json.loads(request.content.decode("utf-8"))
-            return httpx.Response(200, json={})
+            return httpx.Response(
+                201,
+                json={"ad_ack_id": "ack-789", "status": "recoverable_error", "success": False},
+            )
 
         transport = httpx.MockTransport(handler)
         async_client = httpx.AsyncClient(transport=transport)
@@ -904,17 +933,265 @@ def test_acknowledge_async() -> None:
         enhancement_result = _create_mock_enhancement_result()
         llm_response = "Response <ADS>Ad track-id-123</ADS>"
 
-        await client.acknowledge_async(
+        ack = await client.acknowledge_async(
             enhancement_result=enhancement_result,
             llm_response=llm_response,
         )
 
+        assert isinstance(ack, AdAckResponse)
+        assert ack.ad_ack_id == "ack-789"
+        assert ack.status == "recoverable_error"
+        assert ack.success is False
         assert captured["payload"] is not None
         assert captured["payload"]["ad_response_id"] == "resp-123"
 
         await client.aclose()
 
     asyncio.run(run_test())
+
+
+def test_acknowledge_raises_on_invalid_success_json() -> None:
+    """Test that successful acknowledgment responses must contain valid JSON."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content="not-json", headers={"Content-Type": "application/json"})
+
+    transport = httpx.MockTransport(handler)
+    client = Adstract(
+        api_key=API_KEY,
+        http_client=httpx.Client(transport=transport),
+    )
+
+    enhancement_result = _create_mock_enhancement_result()
+
+    with pytest.raises(UnexpectedResponseError, match="Invalid acknowledgment response JSON"):
+        client.acknowledge(
+            enhancement_result=enhancement_result,
+            llm_response="LLM response",
+        )
+
+
+def test_acknowledge_raises_on_invalid_success_schema() -> None:
+    """Test that successful acknowledgment responses must match AdAckResponse."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"ack_id": "missing-fields"})
+
+    transport = httpx.MockTransport(handler)
+    client = Adstract(
+        api_key=API_KEY,
+        http_client=httpx.Client(transport=transport),
+    )
+
+    enhancement_result = _create_mock_enhancement_result()
+
+    with pytest.raises(UnexpectedResponseError, match="Unexpected acknowledgment response structure"):
+        client.acknowledge(
+            enhancement_result=enhancement_result,
+            llm_response="LLM response",
+        )
+
+
+def test_acknowledge_accepts_no_ad_used_status() -> None:
+    """Test that successful acknowledgment responses accept status='no_ad_used'."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"ad_ack_id": "ack-321", "status": "no_ad_used", "success": True})
+
+    transport = httpx.MockTransport(handler)
+    client = Adstract(
+        api_key=API_KEY,
+        http_client=httpx.Client(transport=transport),
+    )
+
+    enhancement_result = _create_mock_enhancement_result()
+
+    ack = client.acknowledge(
+        enhancement_result=enhancement_result,
+        llm_response="LLM response",
+    )
+
+    assert isinstance(ack, AdAckResponse)
+    assert ack.ad_ack_id == "ack-321"
+    assert ack.status == "no_ad_used"
+    assert ack.success is True
+
+
+def test_acknowledge_rejects_inconsistent_success_for_no_ad_used() -> None:
+    """Test that no_ad_used acknowledgments require success=True."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"ad_ack_id": "ack-654", "status": "no_ad_used", "success": False})
+
+    transport = httpx.MockTransport(handler)
+    client = Adstract(
+        api_key=API_KEY,
+        http_client=httpx.Client(transport=transport),
+    )
+
+    enhancement_result = _create_mock_enhancement_result()
+
+    with pytest.raises(UnexpectedResponseError, match="Unexpected acknowledgment response structure"):
+        client.acknowledge(
+            enhancement_result=enhancement_result,
+            llm_response="LLM response",
+        )
+
+
+def test_acknowledge_rejects_inconsistent_success_for_recoverable_error() -> None:
+    """Test that recoverable_error acknowledgments require success=False."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(201, json={"ad_ack_id": "ack-987", "status": "recoverable_error", "success": True})
+
+    transport = httpx.MockTransport(handler)
+    client = Adstract(
+        api_key=API_KEY,
+        http_client=httpx.Client(transport=transport),
+    )
+
+    enhancement_result = _create_mock_enhancement_result()
+
+    with pytest.raises(UnexpectedResponseError, match="Unexpected acknowledgment response structure"):
+        client.acknowledge(
+            enhancement_result=enhancement_result,
+            llm_response="LLM response",
+        )
+
+
+def test_acknowledge_maps_401_to_authentication_error() -> None:
+    """Test that acknowledgment 401 errors map to AuthenticationError."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(401, json={"detail": "unauthorized"})
+
+    transport = httpx.MockTransport(handler)
+    client = Adstract(
+        api_key=API_KEY,
+        http_client=httpx.Client(transport=transport),
+    )
+
+    enhancement_result = _create_mock_enhancement_result()
+
+    with pytest.raises(AuthenticationError, match="Authentication failed: no API key provided or API key is invalid"):
+        client.acknowledge(
+            enhancement_result=enhancement_result,
+            llm_response="LLM response",
+        )
+
+
+def test_acknowledge_maps_403_to_authentication_error() -> None:
+    """Test that acknowledgment 403 errors map to AuthenticationError."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(403, json={"detail": "forbidden"})
+
+    transport = httpx.MockTransport(handler)
+    client = Adstract(
+        api_key=API_KEY,
+        http_client=httpx.Client(transport=transport),
+    )
+
+    enhancement_result = _create_mock_enhancement_result()
+
+    with pytest.raises(
+        AuthenticationError,
+        match="Access denied: API key revoked, platform/publisher account is not active, or the ad response belongs to another platform",
+    ):
+        client.acknowledge(
+            enhancement_result=enhancement_result,
+            llm_response="LLM response",
+        )
+
+
+def test_acknowledge_maps_404_to_unexpected_response_error() -> None:
+    """Test that acknowledgment 404 errors map to UnexpectedResponseError."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(404, json={"detail": "not found"})
+
+    transport = httpx.MockTransport(handler)
+    client = Adstract(
+        api_key=API_KEY,
+        http_client=httpx.Client(transport=transport),
+    )
+
+    enhancement_result = _create_mock_enhancement_result()
+
+    with pytest.raises(UnexpectedResponseError, match="Acknowledgment failed: ad_response_id not found"):
+        client.acknowledge(
+            enhancement_result=enhancement_result,
+            llm_response="LLM response",
+        )
+
+
+def test_acknowledge_maps_409_to_unexpected_response_error() -> None:
+    """Test that acknowledgment 409 errors map to duplicate acknowledgment."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(409, json={"detail": "conflict"})
+
+    transport = httpx.MockTransport(handler)
+    client = Adstract(
+        api_key=API_KEY,
+        http_client=httpx.Client(transport=transport),
+    )
+
+    enhancement_result = _create_mock_enhancement_result()
+
+    with pytest.raises(
+        UnexpectedResponseError,
+        match="Acknowledgment failed: this ad response has already been acknowledged",
+    ):
+        client.acknowledge(
+            enhancement_result=enhancement_result,
+            llm_response="LLM response",
+        )
+
+
+def test_acknowledge_maps_400_to_unexpected_response_error() -> None:
+    """Test that acknowledgment 400 errors map to invalid API key format."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(400, json={"detail": "bad request"})
+
+    transport = httpx.MockTransport(handler)
+    client = Adstract(
+        api_key=API_KEY,
+        http_client=httpx.Client(transport=transport),
+    )
+
+    enhancement_result = _create_mock_enhancement_result()
+
+    with pytest.raises(UnexpectedResponseError, match="Acknowledgment failed: API key format is invalid"):
+        client.acknowledge(
+            enhancement_result=enhancement_result,
+            llm_response="LLM response",
+        )
+
+
+def test_acknowledge_maps_406_to_unexpected_response_error() -> None:
+    """Test that acknowledgment 406 errors map to unsuccessful enhancement."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(406, json={"detail": "not acceptable"})
+
+    transport = httpx.MockTransport(handler)
+    client = Adstract(
+        api_key=API_KEY,
+        http_client=httpx.Client(transport=transport),
+    )
+
+    enhancement_result = _create_mock_enhancement_result()
+
+    with pytest.raises(
+        UnexpectedResponseError,
+        match="Acknowledgment failed: the ad response was not a successful enhancement",
+    ):
+        client.acknowledge(
+            enhancement_result=enhancement_result,
+            llm_response="LLM response",
+        )
 
 
 # ============================================================================

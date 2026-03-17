@@ -165,13 +165,16 @@ report the outcome back to Adstract.
 ```python
 llm_response = "..."   # response from your LLM
 
-client.acknowledge(
+ack = client.acknowledge(
     enhancement_result=result,
     llm_response=llm_response,
 )
+
+print(ack.ad_ack_id)
 ```
 
-`acknowledge` is a no-op when `result.success` is `False`, so it is safe to call unconditionally.
+`acknowledge` returns an `AdAckResponse` on success and is a no-op when `result.success` is `False`,
+so it is safe to call unconditionally.
 
 ## Wrapping Type
 
@@ -208,10 +211,11 @@ async def main() -> None:
 
     if result.success:
         llm_response = "..."  # your LLM call here
-        await client.acknowledge_async(
+        ack = await client.acknowledge_async(
             enhancement_result=result,
             llm_response=llm_response,
         )
+        print(ack.ad_ack_id)
 
     await client.aclose()
 
@@ -224,7 +228,7 @@ asyncio.run(main())
 |--------|-------------|
 | `request_ad()` | Request ad enhancement (sync) |
 | `request_ad_async()` | Request ad enhancement (async) |
-| `acknowledge()` | Report LLM response back to Adstract (sync) |
-| `acknowledge_async()` | Report LLM response back to Adstract (async) |
+| `acknowledge()` | Report LLM response back to Adstract and return `AdAckResponse` (sync) |
+| `acknowledge_async()` | Report LLM response back to Adstract and return `AdAckResponse` (async) |
 | `close()` | Close the sync HTTP client |
 | `aclose()` | Close the async HTTP client |

@@ -5,6 +5,7 @@ from adstractai.errors import (
     AdEnhancementError,
     AdSDKError,
     AuthenticationError,
+    DuplicateAdRequestError,
     NetworkError,
     NoFillError,
     PromptRejectedError,
@@ -15,6 +16,7 @@ from adstractai.errors import (
 )
 from adstractai.models import (
     AdAck,
+    AdAckResponse,
     AdRequest,
     AdRequestContext,
     AdResponse,
@@ -26,6 +28,7 @@ from adstractai.models import (
 __all__ = [
     "Adstract",
     "AdAck",
+    "AdAckResponse",
     "AdRequest",
     "AdRequestContext",
     "AdResponse",
@@ -35,6 +38,7 @@ __all__ = [
     "AdSDKError",
     "AdEnhancementError",
     "AuthenticationError",
+    "DuplicateAdRequestError",
     "NetworkError",
     "NoFillError",
     "PromptRejectedError",

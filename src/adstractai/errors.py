@@ -50,6 +50,10 @@ class UnexpectedResponseError(AdSDKError):
     """Raised when the response payload is invalid or unexpected."""
 
 
+class DuplicateAdRequestError(UnexpectedResponseError):
+    """Raised when a message already has an ad request associated with it."""
+
+
 class AdEnhancementError(AdSDKError):
     """Raised when ad enhancement fails."""
 
